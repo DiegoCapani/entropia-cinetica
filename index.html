@@ -1,22 +1,3 @@
-# Entropia Cinetica — Versione Corretta (Pennellata Continua Direzionale)
-
-## Funzionalità
-
-* Splash screen iniziale con pulsante "Avvia".
-* Motion detection da differenza frame.
-* Una sola pennellata continua per movimento.
-* La pennellata segue la direzione reale del movimento.
-* Linee organiche continue (no segmenti, no punti).
-* Spessore linea aumentato del 50%.
-* Colori campionati dalla webcam.
-* Reset automatico ogni 15 secondi.
-* Pulsante Reset manuale.
-* Pulsante Salva PNG.
-* Pulsante Fullscreen.
-
----
-
-```html
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -29,65 +10,39 @@ html, body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background: black;
+  background: #000;
 }
 
-video, canvas {
+video {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+  transform: scaleX(-1);
+  opacity: 0.15;
+}
+
+canvas {
   position: fixed;
   inset: 0;
   width: 100vw;
   height: 100vh;
 }
 
-video {
-  object-fit: cover;
-  transform: scaleX(-1);
-  opacity: 0.12;
-}
-
-canvas { pointer-events: none; }
-
-#splash {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: radial-gradient(circle, #111, #000);
-  color: white;
-  z-index: 1000;
-  text-align: center;
-}
-
-#splash h1 {
-  font-size: clamp(2rem, 6vw, 4rem);
-  font-weight: 300;
-  letter-spacing: 0.1em;
-}
-
-#start {
-  margin-top: 20px;
-  padding: 12px 26px;
-  border-radius: 999px;
-  border: none;
-  cursor: pointer;
-  font-weight: bold;
-}
-
 #ui {
   position: fixed;
-  top: 10px;
-  left: 10px;
-  z-index: 999;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
   display: flex;
   gap: 8px;
 }
 
 button {
-  background: rgba(0,0,0,0.6);
+  background: rgba(0,0,0,0.55);
   color: white;
-  border: 1px solid rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.25);
   padding: 8px 12px;
   border-radius: 8px;
   cursor: pointer;
@@ -96,164 +51,147 @@ button {
 </head>
 <body>
 
-<div id="splash">
-  <h1>ENTROPIA CINETICA 2</h1>
-  <button id="start">Avvia</button>
-</div>
+<video id="video" autoplay playsinline muted></video>
+<canvas id="canvas"></canvas>
 
 <div id="ui">
   <button onclick="resetCanvas()">Reset</button>
-  <button onclick="savePNG()">Salva PNG</button>
-  <button onclick="goFullscreen()">Fullscreen</button>
+  <button onclick="saveImage()">Salva PNG</button>
 </div>
-
-<video id="video" autoplay playsinline muted></video>
-<canvas id="canvas"></canvas>
 
 <script>
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-const splash = document.getElementById('splash');
-const start = document.getElementById('start');
 
-function resize(){
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+// Canvas interno a bassa risoluzione per il motion detection
+const motionCanvas = document.createElement('canvas');
+const motionCtx = motionCanvas.getContext('2d', { willReadFrequently: true });
+motionCanvas.width = 160;
+motionCanvas.height = 90;
+
+let previousFrame = null;
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = window.innerWidth * dpr;
+  canvas.height = window.innerHeight * dpr;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 window.addEventListener('resize', resize);
 resize();
 
-async function cam(){
+async function setupCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'user' },
+    video: {
+      facingMode: 'user',
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    },
     audio: false
   });
+
   video.srcObject = stream;
+
+  return new Promise(resolve => {
+    video.onloadedmetadata = () => {
+      video.play();
+      resolve();
+    };
+  });
 }
 
-const buf = document.createElement('canvas');
-const bctx = buf.getContext('2d', { willReadFrequently: true });
-buf.width = 140;
-buf.height = 90;
-
-let prev;
-
-let isDrawing = false;
-let prevX = 0;
-let prevY = 0;
-
-let prevCx = 0;
-let prevCy = 0;
-
-function drawLine(x1, y1, x2, y2, color, intensity){
-  ctx.save();
-
-  ctx.strokeStyle = color;
-  ctx.globalAlpha = 0.16;
-  ctx.lineWidth = 6.0; // +50%
-  ctx.lineCap = 'round';
-
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-
-  ctx.restore();
+function resetCanvas() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
-function loop(){
-
-  if(video.readyState >= 2){
-
-    bctx.drawImage(video, 0, 0, buf.width, buf.height);
-    const f = bctx.getImageData(0,0,buf.width,buf.height);
-    const d = f.data;
-
-    let mx = 0;
-    let my = 0;
-    let count = 0;
-    let motion = 0;
-
-    if(prev){
-
-      for(let y=0;y<buf.height;y+=6){
-        for(let x=0;x<buf.width;x+=6){
-
-          const i = (y*buf.width + x)*4;
-
-          const diff =
-            Math.abs(d[i]-prev[i])+
-            Math.abs(d[i+1]-prev[i+1])+
-            Math.abs(d[i+2]-prev[i+2]);
-
-          if(diff > 80){
-            mx += x;
-            my += y;
-            motion += diff;
-            count++;
-          }
-        }
-      }
-
-      if(count > 0){
-
-        mx /= count;
-        my /= count;
-
-        const sx = mx * window.innerWidth / buf.width;
-        const sy = my * window.innerHeight / buf.height;
-
-        const color = `rgba(${d[0]},${d[1]},${d[2]},0.16)`;
-
-        if(!isDrawing){
-          isDrawing = true;
-          prevX = sx;
-          prevY = sy;
-        }
-
-        drawLine(prevX, prevY, sx, sy, color, motion);
-
-        prevX = sx;
-        prevY = sy;
-
-      } else {
-        isDrawing = false;
-      }
-    }
-
-    prev = new Uint8ClampedArray(d);
-  }
-
-  requestAnimationFrame(loop);
-}
-
-function resetCanvas(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  isDrawing = false;
-}
-
-function savePNG(){
+function saveImage() {
   const link = document.createElement('a');
   link.download = 'entropia-cinetica.png';
   link.href = canvas.toDataURL('image/png');
   link.click();
 }
 
-function goFullscreen(){
-  document.documentElement.requestFullscreen?.();
+function drawBrushStroke(x, y, color, intensity) {
+  const screenX = (1 - x / motionCanvas.width) * window.innerWidth;
+  const screenY = (y / motionCanvas.height) * window.innerHeight;
+
+  const length = 8 + intensity * 0.15;
+  const angle = Math.random() * Math.PI * 2;
+
+  const x2 = screenX + Math.cos(angle) * length;
+  const y2 = screenY + Math.sin(angle) * length;
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1 + intensity * 0.02;
+  ctx.globalAlpha = 0.12;
+  ctx.lineCap = 'round';
+
+  ctx.beginPath();
+  ctx.moveTo(screenX, screenY);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
-start.onclick = async ()=>{
-  await cam();
-  splash.style.display='none';
+function processFrame() {
+  if (video.readyState < 2) {
+    requestAnimationFrame(processFrame);
+    return;
+  }
 
-  setInterval(resetCanvas,60000);
+  // Copia il frame video nel canvas interno
+  motionCtx.save();
+  motionCtx.scale(-1, 1);
+  motionCtx.drawImage(video, -motionCanvas.width, 0, motionCanvas.width, motionCanvas.height);
+  motionCtx.restore();
 
-  loop();
-};
+  const frame = motionCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height);
+  const data = frame.data;
+
+  if (previousFrame) {
+    // Campiona solo alcuni pixel per mantenere alta fluidità
+    for (let y = 0; y < motionCanvas.height; y += 4) {
+      for (let x = 0; x < motionCanvas.width; x += 4) {
+        const i = (y * motionCanvas.width + x) * 4;
+
+        const dr = Math.abs(data[i] - previousFrame[i]);
+        const dg = Math.abs(data[i + 1] - previousFrame[i + 1]);
+        const db = Math.abs(data[i + 2] - previousFrame[i + 2]);
+
+        const diff = dr + dg + db;
+
+        // Disegna solo se c'è movimento significativo
+        if (diff > 70) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          const color = `rgba(${r}, ${g}, ${b}, 0.18)`;
+
+          drawBrushStroke(x, y, color, diff);
+        }
+      }
+    }
+  }
+
+  previousFrame = new Uint8ClampedArray(data);
+
+  requestAnimationFrame(processFrame);
+}
+
+async function init() {
+  await setupCamera();
+  processFrame();
+}
+
+init().catch(err => {
+  alert('Errore: ' + err.message);
+  console.error(err);
+});
 </script>
-
 </body>
 </html>
-```
