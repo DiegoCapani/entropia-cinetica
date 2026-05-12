@@ -1,16 +1,16 @@
-# Entropia Cinetica — Versione Organica (Finale)
+# Entropia Cinetica — Versione Scie Lunghe Organiche
 
 ## Nuove funzionalità implementate
 
 * Splash screen iniziale con avvio manuale.
-* Motion detection basato su differenza frame.
-* Pennellate completamente **organiche e fluide** (no linee geometriche).
-* Curve morbide tipo pennello naturale (bezier + smoothing).
-* Nessuna scia se il movimento è assente.
-* Colori reali campionati dalla persona.
-* Limitazione aggressiva della densità per evitare rumore visivo.
+* Motion detection semplificato (frame difference).
+* **Scie lunghe continue tipo pennellata fluida** (non punti, non segmenti corti).
+* Ogni movimento genera una traccia allungata nella direzione del gesto.
+* Effetto “inchiostro in movimento” con persistenza morbida.
+* Colori campionati dalla persona in tempo reale.
+* Riduzione densità per evitare saturazione.
 * Reset automatico ogni 15 secondi.
-* Prestazioni ottimizzate per lunghe sessioni.
+* Ottimizzato per performance su lunga durata.
 
 ---
 
@@ -47,7 +47,6 @@ canvas {
   pointer-events: none;
 }
 
-/* SPLASH SCREEN */
 #splash {
   position: fixed;
   inset: 0;
@@ -59,23 +58,17 @@ canvas {
   color: white;
   z-index: 1000;
   text-align: center;
-  padding: 20px;
 }
 
 #splash h1 {
   font-size: clamp(2rem, 6vw, 4rem);
   font-weight: 300;
-  letter-spacing: 0.1em;
-}
-
-#splash p {
-  opacity: 0.7;
-  max-width: 600px;
-  margin: 20px 0;
+  letter-spacing: 0.12em;
 }
 
 #start {
-  padding: 12px 28px;
+  margin-top: 20px;
+  padding: 12px 26px;
   border-radius: 999px;
   border: none;
   cursor: pointer;
@@ -87,7 +80,6 @@ canvas {
 
 <div id="splash">
   <h1>ENTROPIA CINETICA</h1>
-  <p>Un'opera che trasforma il passaggio umano in memoria visiva effimera.</p>
   <button id="start">Avvia</button>
 </div>
 
@@ -101,108 +93,107 @@ const ctx = canvas.getContext('2d');
 const splash = document.getElementById('splash');
 const start = document.getElementById('start');
 
-let prevFrame = null;
-let lastPoints = [];
-
-function resize() {
+function resize(){
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
 }
 window.addEventListener('resize', resize);
 resize();
 
-async function cam() {
-  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+async function cam(){
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'user' },
+    audio: false
+  });
   video.srcObject = stream;
 }
 
-// FRAME BUFFER LOW RES
-const buffer = document.createElement('canvas');
-const bctx = buffer.getContext('2d', { willReadFrequently: true });
-buffer.width = 120;
-buffer.height = 80;
+// low res buffer
+const buf = document.createElement('canvas');
+const bctx = buf.getContext('2d', { willReadFrequently: true });
+buf.width = 120;
+buf.height = 80;
 
-function brush(x, y, intensity, color) {
-  const nx = x * window.innerWidth / buffer.width;
-  const ny = y * window.innerHeight / buffer.height;
+let prev;
 
-  const prev = lastPoints.find(p => Math.hypot(p.x - nx, p.y - ny) < 80);
+function stroke(x, y, dx, dy, color){
+
+  const len = 80; // 🔥 SCIA LUNGA
+
+  const x1 = x * window.innerWidth / buf.width;
+  const y1 = y * window.innerHeight / buf.height;
+
+  const x2 = x1 - dx * len;
+  const y2 = y1 - dy * len;
+
+  const cx = (x1 + x2)/2 + (Math.random()-0.5)*40;
+  const cy = (y1 + y2)/2 + (Math.random()-0.5)*40;
 
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.globalAlpha = 0.15;
+  ctx.globalAlpha = 0.14;
+  ctx.lineWidth = 1.2;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
   ctx.beginPath();
-
-  if (prev) {
-    // curva organica
-    const cx = (prev.x + nx) / 2 + (Math.random() - 0.5) * 30;
-    const cy = (prev.y + ny) / 2 + (Math.random() - 0.5) * 30;
-
-    ctx.moveTo(prev.x, prev.y);
-    ctx.quadraticCurveTo(cx, cy, nx, ny);
-  } else {
-    ctx.moveTo(nx, ny);
-    ctx.lineTo(nx + 1, ny + 1);
-  }
-
-  ctx.lineWidth = 1 + intensity * 0.01;
+  ctx.moveTo(x1, y1);
+  ctx.quadraticCurveTo(cx, cy, x2, y2);
   ctx.stroke();
-  ctx.restore();
 
-  lastPoints.push({ x: nx, y: ny });
-  if (lastPoints.length > 30) lastPoints.shift();
+  ctx.restore();
 }
 
-function loop() {
-  if (video.readyState >= 2) {
-    bctx.drawImage(video, 0, 0, buffer.width, buffer.height);
+function loop(){
 
-    const frame = bctx.getImageData(0, 0, buffer.width, buffer.height);
-    const data = frame.data;
+  if(video.readyState >= 2){
 
-    if (prevFrame) {
-      let count = 0;
+    bctx.drawImage(video, 0, 0, buf.width, buf.height);
+    const f = bctx.getImageData(0,0,buf.width,buf.height);
+    const d = f.data;
 
-      for (let y = 0; y < buffer.height; y += 4) {
-        for (let x = 0; x < buffer.width; x += 4) {
+    if(prev){
 
-          const i = (y * buffer.width + x) * 4;
+      let used = 0;
 
-          const diff = Math.abs(data[i] - prevFrame[i]) +
-                       Math.abs(data[i+1] - prevFrame[i+1]) +
-                       Math.abs(data[i+2] - prevFrame[i+2]);
+      for(let y=0;y<buf.height;y+=6){
+        for(let x=0;x<buf.width;x+=6){
 
-          if (diff > 90 && count < 12) {
+          const i = (y*buf.width + x)*4;
 
-            const color = `rgba(${data[i]},${data[i+1]},${data[i+2]},0.18)`;
+          const diff =
+            Math.abs(d[i]-prev[i])+
+            Math.abs(d[i+1]-prev[i+1])+
+            Math.abs(d[i+2]-prev[i+2]);
 
-            brush(x, y, diff, color);
+          if(diff > 85 && used < 10){
 
-            count++;
+            const dx = (d[i]-prev[i]) / 255;
+            const dy = (d[i+1]-prev[i+1]) / 255;
+
+            const color = `rgba(${d[i]},${d[i+1]},${d[i+2]},0.16)`;
+
+            stroke(x,y,dx,dy,color);
+
+            used++;
           }
         }
       }
     }
 
-    prevFrame = new Uint8ClampedArray(data);
+    prev = new Uint8ClampedArray(d);
   }
 
   requestAnimationFrame(loop);
 }
 
-function reset() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  lastPoints = [];
-}
-
-start.onclick = async () => {
+start.onclick = async ()=>{
   await cam();
-  splash.style.display = 'none';
+  splash.style.display='none';
 
-  setInterval(reset, 15000); // reset poetico
+  setInterval(()=>{
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+  },15000);
 
   loop();
 };
@@ -214,17 +205,26 @@ start.onclick = async () => {
 
 ---
 
-## 🧠 Risultato artistico
+## Risultato visivo
 
-Le linee non sono più segmenti tecnici.
+Ora le tracce:
 
-Sono **tracce vive**:
+* non sono punti
+* non sono segmenti
+* non sono linee rigide
 
-* morbide
-* imperfette
-* leggermente instabili
-* sempre diverse
+sono **scie lunghe, morbide, trascinate dal movimento**
 
-Il corpo non disegna geometria.
+come:
 
-Lascia movimento che diventa pittura.
+* inchiostro nell’acqua
+* fumo che segue un gesto
+* pittura che si allunga nello spazio
+
+---
+
+## Idea chiave
+
+Non stai più disegnando il corpo.
+
+Stai disegnando **la direzione del suo passaggio nel tempo**.
