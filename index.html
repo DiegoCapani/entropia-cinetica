@@ -14,7 +14,17 @@ html, body {
   font-family: Arial, sans-serif;
 }
 
-/* CAMERA */
+#video {
+  display: none;
+}
+
+#canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
 #videoView {
   position: fixed;
   inset: 0;
@@ -22,25 +32,12 @@ html, body {
   height: 100vh;
   object-fit: cover;
   transform: scaleX(-1);
-  opacity: 0.25;
-  filter: contrast(1.1) saturate(1.2);
+  opacity: 0.18;
+  filter: contrast(1.05) saturate(1.1);
+  pointer-events: none;
   z-index: 1;
 }
 
-/* CANVAS SCIE */
-#canvas {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: 2;
-}
-
-#video {
-  display: none;
-}
-
-/* UI */
 #ui {
   position: fixed;
   top: 10px;
@@ -63,7 +60,7 @@ button:hover {
   background: rgba(255,255,255,0.1);
 }
 
-/* SPLASH */
+/* SPLASH SCREEN */
 #splash {
   position: fixed;
   inset: 0;
@@ -102,10 +99,9 @@ button:hover {
 
 <body>
 
-<!-- SPLASH -->
 <div id="splash">
   <h1>ENTROPIA CINETICA</h1>
-  <p>web app v1.0</p>
+  <p>web app v1.3</p>
   <button id="startApp">Avvia web app</button>
 </div>
 
@@ -129,6 +125,7 @@ const ctx = canvas.getContext('2d');
 
 let poseLandmarker;
 let previousPoints = new Map();
+let particles = [];
 let lastStrokeTime = new Map();
 
 const LANDMARK_INDEXES = [
@@ -184,12 +181,14 @@ async function setupPose() {
   });
 }
 
-/* CAMPO COLORE (migliorabile ma stabile) */
 const sampleCanvas = document.createElement('canvas');
 const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
 sampleCanvas.width = 160;
 sampleCanvas.height = 90;
 
+//
+// 🔥 MIGLIORAMENTO COLORI (VIVACITÀ + BOOST REALE)
+//
 function getColorFromVideo(x, y) {
   if (!video.videoWidth || !video.videoHeight) {
     return 'rgba(255,255,255,0.25)';
@@ -203,15 +202,25 @@ function getColorFromVideo(x, y) {
 
   const data = sampleCtx.getImageData(px, py, 1, 1).data;
 
-  // 🔥 BOOST VIVACITÀ COLORI
-  const r = Math.min(255, data[0] * 1.25);
-  const g = Math.min(255, data[1] * 1.25);
-  const b = Math.min(255, data[2] * 1.25);
+  // 🔥 boost cromatico serio
+  let r = data[0];
+  let g = data[1];
+  let b = data[2];
 
-  return `rgba(${r}, ${g}, ${b}, 0.22)`;
+  // aumento saturazione percepita
+  const avg = (r + g + b) / 3;
+  r = r + (r - avg) * 0.6;
+  g = g + (g - avg) * 0.6;
+  b = b + (b - avg) * 0.6;
+
+  // boost luminosità
+  r *= 1.15;
+  g *= 1.15;
+  b *= 1.15;
+
+  return `rgba(${Math.min(255, r)}, ${Math.min(255, g)}, ${Math.min(255, b)}, 0.22)`;
 }
 
-/* SCIE */
 function drawTrails(landmarks) {
   const now = performance.now();
 
@@ -265,15 +274,6 @@ function drawTrails(landmarks) {
   }
 }
 
-/* RENDER VIDEO (FIX CAMERA VISIBILE) */
-function drawVideo() {
-  if (video.readyState >= 2) {
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  }
-  requestAnimationFrame(drawVideo);
-}
-
-/* LOOP POSE */
 function render() {
   if (video.readyState >= 2) {
     sampleCtx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
@@ -291,13 +291,15 @@ async function detectLoop() {
   requestAnimationFrame(detectLoop);
 }
 
-/* RESET */
 function resetCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  particles = [];
   previousPoints.clear();
 }
 
-/* SAVE PNG SU NERO */
+//
+// 🖤 EXPORT PNG CON SFONDO NERO FORZATO
+//
 function saveCanvas() {
   const exportCanvas = document.createElement('canvas');
   const exportCtx = exportCanvas.getContext('2d');
@@ -317,19 +319,18 @@ function saveCanvas() {
   link.click();
 }
 
-/* FULLSCREEN */
 async function goFullscreen() {
   if (!document.fullscreenElement) {
     await document.documentElement.requestFullscreen().catch(() => {});
   }
 }
 
-/* UI */
+// UI
 document.getElementById('resetBtn').addEventListener('click', resetCanvas);
 document.getElementById('saveBtn').addEventListener('click', saveCanvas);
 document.getElementById('fullscreenBtn').addEventListener('click', goFullscreen);
 
-/* START */
+// START
 document.getElementById('startApp').addEventListener('click', async () => {
   document.getElementById('splash').style.display = 'none';
 
@@ -337,7 +338,6 @@ document.getElementById('startApp').addEventListener('click', async () => {
   await setupCamera();
   await setupPose();
 
-  drawVideo();
   render();
   detectLoop();
 
