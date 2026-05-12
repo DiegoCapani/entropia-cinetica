@@ -1,38 +1,34 @@
 <!DOCTYPE html>
-<html lang="it">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-    <title>Entropia Cinetica | Città Visibile 2026</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>ENTROPIA CINETICA | Diego Capani</title>
     <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #000; }
-        #start-btn {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            padding: 15px 30px; font-size: 18px; z-index: 999;
-            background: #fff; border: none; border-radius: 50px; cursor: pointer;
+        #overlay {
+            position: absolute; top: 20px; left: 20px; color: white;
+            z-index: 10; font-family: 'Courier New', monospace; pointer-events: none;
         }
-        .ui-overlay {
-            position: absolute; bottom: 20px; left: 20px; color: white;
-            z-index: 100; font-family: sans-serif; pointer-events: none; text-shadow: 1px 1px 2px black;
+        #btn-start {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            padding: 20px; z-index: 100; cursor: pointer; background: white; border: none;
         }
     </style>
 </head>
 <body>
 
-    <button id="start-btn">ENTRA NELL'ENTROPIA</button>
+    <div id="overlay">ENTROPIA CINETICA<br>Diego Capani - 2026</div>
+    <button id="btn-start">ATTIVA INSTALLAZIONE</button>
 
-    <div class="ui-overlay">
-        <strong>ENTROPIA CINETICA</strong><br>Diego Capani
-    </div>
-
-    <!-- Scena AR: disabilitata all'inizio per evitare conflitti video -->
-    <a-scene id="ar-scene" embedded arjs="sourceType: webcam; debugUIEnabled: false;" vr-mode-ui="enabled: false" style="display:none;">
-        <a-marker id="main-marker" preset="hiro">
-            <a-plane id="painting-surface" position="0 0 0" rotation="-90 0 0" 
-                     width="3" height="3" material="shader: flat; transparent: true; opacity: 0.9">
+    <a-scene id="scena" embedded arjs="sourceType: webcam; debugUIEnabled: false;" vr-mode-ui="enabled: false" style="display:none;">
+        <a-marker preset="hiro">
+            <!-- La superficie deve avere un materiale che p5 può aggiornare -->
+            <a-plane id="tela" position="0 0 0" rotation="-90 0 0" width="3" height="3" 
+                     material="shader: flat; transparent: true; opacity: 1;">
             </a-plane>
         </a-marker>
         <a-entity camera></a-entity>
@@ -40,92 +36,83 @@
 
     <script>
         let video;
-        let prevFrame;
-        let canvasGraphics;
-        let isStarted = false;
-        const threshold = 25;
+        let pg; // Il buffer persistente (la nostra tela digitale)
+        let prevImg;
+        const threshold = 30;
 
-        const startBtn = document.getElementById('start-btn');
-        const arScene = document.getElementById('ar-scene');
-
-        startBtn.addEventListener('click', () => {
-            isStarted = true;
-            startBtn.style.display = 'none';
-            arScene.style.display = 'block';
-            
-            // Inizializziamo p5 dopo il click per sbloccare i permessi camera
-            initP5();
+        document.getElementById('btn-start').addEventListener('click', function() {
+            this.style.display = 'none';
+            document.getElementById('scena').style.display = 'block';
+            setupP5();
         });
 
-        function initP5() {
+        function setupP5() {
             new p5((p) => {
                 p.setup = () => {
-                    // Creiamo un canvas piccolo per i calcoli per non pesare sulla CPU del mobile
                     p.createCanvas(320, 240).hide();
-                    
-                    // Cerchiamo il video già creato da AR.js invece di crearne uno nuovo
-                    // Questo evita il blocco "Start Video"
-                    setTimeout(() => {
-                        const arVideo = document.querySelector('video');
-                        if (arVideo) {
-                            video = p.createCapture({
-                                audio: false,
-                                video: {
-                                    facingMode: "environment"
-                                }
-                            }, () => {
-                                console.log("Video caricato correttamente");
-                            });
-                            video.size(320, 240);
-                            video.hide();
-                            prevFrame = p.createImage(320, 240);
-                        }
-                    }, 1000);
+                    video = p.createCapture(p.VIDEO);
+                    video.size(320, 240);
+                    video.hide();
 
-                    canvasGraphics = p.createGraphics(600, 600);
-                    canvasGraphics.background(0, 0); 
+                    // CREAZIONE TELA PERSISTENTE
+                    pg = p.createGraphics(1024, 1024);
+                    pg.clear(); // Inizia totalmente trasparente
+                    
+                    prevImg = p.createImage(320, 240);
                 };
 
                 p.draw = () => {
-                    if (!video || !video.elt) return;
+                    if (!video.loadedmetadata) return;
 
                     video.loadPixels();
-                    prevFrame.loadPixels();
+                    prevImg.loadPixels();
 
-                    if (video.pixels.length > 0) {
-                        for (let x = 0; x < video.width; x += 8) {
-                            for (let y = 0; y < video.height; y += 8) {
-                                let i = (x + y * video.width) * 4;
+                    // Logica di campionamento e traccia
+                    let activePixels = 0;
+
+                    for (let y = 0; y < video.height; y += 6) {
+                        for (let x = 0; x < video.width; x += 6) {
+                            let i = (x + y * video.width) * 4;
+                            
+                            let r1 = video.pixels[i];
+                            let g1 = video.pixels[i+1];
+                            let b1 = video.pixels[i+2];
+
+                            let r2 = prevImg.pixels[i];
+                            let g2 = prevImg.pixels[i+1];
+                            let b2 = prevImg.pixels[i+2];
+
+                            let diff = p.dist(r1, g1, b1, r2, g2, b2);
+
+                            if (diff > threshold) {
+                                // DISEGNO SULLA TELA PERSISTENTE (pg)
+                                // Usiamo coordinate mappate per coprire la tela 1024x1024
+                                let tx = p.map(x, 0, video.width, 0, pg.width);
+                                let ty = p.map(y, 0, video.height, 0, pg.height);
                                 
-                                let r = video.pixels[i];
-                                let g = video.pixels[i+1];
-                                let b = video.pixels[i+2];
-                                let pr = prevFrame.pixels[i];
-                                let pg = prevFrame.pixels[i+1];
-                                let pb = prevFrame.pixels[i+2];
-
-                                let d = p.dist(r, g, b, pr, pg, pb);
-
-                                if (d > threshold) {
-                                    canvasGraphics.noStroke();
-                                    canvasGraphics.fill(r, g, b, 60);
-                                    let mx = p.map(x, 0, video.width, 0, canvasGraphics.width);
-                                    let my = p.map(y, 0, video.height, 0, canvasGraphics.height);
-                                    canvasGraphics.ellipse(mx, my, d/3, d/3);
-                                }
+                                pg.noStroke();
+                                pg.fill(r1, g1, b1, 150); // Colore reale campionato dagli abiti
+                                pg.ellipse(tx, ty, diff * 0.8, diff * 0.8);
+                                activePixels++;
                             }
                         }
-                        prevFrame.copy(video, 0, 0, 320, 240, 0, 0, 320, 240);
-                        updateTexture();
+                    }
+
+                    if (activePixels > 0) {
+                        prevImg.copy(video, 0, 0, 320, 240, 0, 0, 320, 240);
+                        updateAR();
                     }
                 };
 
-                function updateTexture() {
-                    const plane = document.getElementById('painting-surface');
+                function updateAR() {
+                    const plane = document.getElementById('tela');
                     if (plane && plane.getObject3D('mesh')) {
                         const mesh = plane.getObject3D('mesh');
-                        const texture = new THREE.CanvasTexture(canvasGraphics.elt);
+                        const texture = new THREE.CanvasTexture(pg.elt);
+                        
+                        // IMPORTANTE: Disporre della vecchia texture per non saturare la GPU
                         if (mesh.material.map) mesh.material.map.dispose();
+                        
                         mesh.material.map = texture;
                         mesh.material.needsUpdate = true;
                     }
