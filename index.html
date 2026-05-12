@@ -11,68 +11,92 @@ html, body {
   padding: 0;
   overflow: hidden;
   background: #000;
+  font-family: Arial, sans-serif;
 }
 
-video {
+#video {
+  display: none;
+}
+
+#canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+#videoView {
   position: fixed;
   inset: 0;
   width: 100vw;
   height: 100vh;
   object-fit: cover;
   transform: scaleX(-1);
-  opacity: 0.15;
-}
-
-canvas {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
+  opacity: 0.18;
+  filter: contrast(1.05) saturate(1.1);
+  pointer-events: none;
 }
 
 #ui {
   position: fixed;
-  top: 12px;
-  left: 12px;
+  top: 10px;
+  left: 10px;
   z-index: 10;
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
 button {
-  background: rgba(0,0,0,0.55);
+  background: rgba(0,0,0,0.6);
   color: white;
-  border: 1px solid rgba(255,255,255,0.25);
+  border: 1px solid rgba(255,255,255,0.3);
   padding: 8px 12px;
   border-radius: 8px;
   cursor: pointer;
+}
+
+button:hover {
+  background: rgba(255,255,255,0.1);
 }
 </style>
 </head>
 <body>
 
 <video id="video" autoplay playsinline muted></video>
+<video id="videoView" autoplay playsinline muted></video>
 <canvas id="canvas"></canvas>
 
 <div id="ui">
-  <button onclick="resetCanvas()">Reset</button>
-  <button onclick="saveImage()">Salva PNG</button>
+  <button id="resetBtn">Reset</button>
+  <button id="saveBtn">Salva PNG</button>
+  <button id="fullscreenBtn">Fullscreen</button>
 </div>
 
-<script>
+<script type="module">
+import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+
 const video = document.getElementById('video');
+const videoView = document.getElementById('videoView');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
-// Canvas interno a bassa risoluzione per il motion detection
-const motionCanvas = document.createElement('canvas');
-const motionCtx = motionCanvas.getContext('2d', { willReadFrequently: true });
-motionCanvas.width = 160;
-motionCanvas.height = 90;
+let poseLandmarker;
+let previousPoints = new Map();
+let particles = [];
+let lastStrokeTime = new Map();
 
-let previousFrame = null;
+// Punti principali del corpo utilizzati per generare le pennellate
+const LANDMARK_INDEXES = [
+  0,   // naso
+  11, 12, // spalle
+  13, 14, // gomiti
+  15, 16, // polsi
+  23, 24, // anche
+  25, 26, // ginocchia
+  27, 28  // caviglie
+];
 
-function resize() {
+function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = window.innerWidth * dpr;
   canvas.height = window.innerHeight * dpr;
@@ -80,20 +104,22 @@ function resize() {
   canvas.style.height = window.innerHeight + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-window.addEventListener('resize', resize);
-resize();
+
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 
 async function setupCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({
     video: {
-      facingMode: 'user',
       width: { ideal: 1280 },
-      height: { ideal: 720 }
+      height: { ideal: 720 },
+      facingMode: 'user'
     },
     audio: false
   });
 
   video.srcObject = stream;
+  videoView.srcObject = stream;
 
   return new Promise(resolve => {
     video.onloadedmetadata = () => {
@@ -103,95 +129,183 @@ async function setupCamera() {
   });
 }
 
-function resetCanvas() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+async function setupPose() {
+  const vision = await FilesetResolver.forVisionTasks(
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+  );
+
+  poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath:
+        'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task'
+    },
+    runningMode: 'VIDEO',
+    numPoses: 1
+  });
 }
 
-function saveImage() {
+// Canvas offscreen per campionare i colori senza creare un canvas ad ogni frame
+const sampleCanvas = document.createElement('canvas');
+const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+sampleCanvas.width = 160;
+sampleCanvas.height = 90;
+
+function getColorFromVideo(x, y) {
+  if (!video.videoWidth || !video.videoHeight) {
+    return 'rgba(255,255,255,0.22)';
+  }
+
+  const sx = Math.floor((1 - x) * sampleCanvas.width);
+  const sy = Math.floor(y * sampleCanvas.height);
+
+  const px = Math.max(0, Math.min(sampleCanvas.width - 1, sx));
+  const py = Math.max(0, Math.min(sampleCanvas.height - 1, sy));
+
+  const data = sampleCtx.getImageData(px, py, 1, 1).data;
+  return `rgba(${data[0]}, ${data[1]}, ${data[2]}, 0.20)`;
+}
+
+// Non utilizziamo particelle: solo pennellate fluide.
+function addParticle() {}
+
+function updateParticles() {}
+
+function drawParticles() {}
+
+function drawTrails(landmarks) {
+  const now = performance.now();
+
+  for (const index of LANDMARK_INDEXES) {
+    const lm = landmarks[index];
+    if (!lm || lm.visibility < 0.6) continue;
+
+    const x = (1 - lm.x) * window.innerWidth;
+    const y = lm.y * window.innerHeight;
+
+    const prev = previousPoints.get(index);
+    const color = getColorFromVideo(lm.x, lm.y);
+
+    if (prev) {
+      const dx = x - prev.x;
+      const dy = y - prev.y;
+      const speed = Math.hypot(dx, dy);
+
+      // Se il movimento è minimo, non disegnare nulla
+      if (speed < 8) {
+        previousPoints.set(index, { x, y });
+        continue;
+      }
+
+      // Limita la frequenza delle pennellate per ogni landmark
+      const last = lastStrokeTime.get(index) || 0;
+      if (now - last < 90) {
+        previousPoints.set(index, { x, y });
+        continue;
+      }
+      lastStrokeTime.set(index, now);
+
+      // Pennellata principale
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = color;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = Math.max(3, Math.min(16, speed * 0.09));
+      ctx.globalAlpha = 0.18;
+
+      ctx.beginPath();
+      ctx.moveTo(prev.x, prev.y);
+
+      // curva morbida per effetto pennellata
+      const cx = (prev.x + x) / 2 + (Math.random() - 0.5) * 8;
+      const cy = (prev.y + y) / 2 + (Math.random() - 0.5) * 8;
+      ctx.quadraticCurveTo(cx, cy, x, y);
+      ctx.stroke(); 
+
+      // seconda passata leggera per texture pittorica
+      ctx.lineWidth *= 0.5;
+      ctx.globalAlpha = 0.10;
+      ctx.beginPath();
+      ctx.moveTo(prev.x, prev.y);
+      ctx.quadraticCurveTo(cx, cy, x, y);
+      ctx.stroke(); 
+      ctx.restore();
+
+      // Nessuna particella: solo una singola pennellata.
+    }
+
+    previousPoints.set(index, { x, y });
+  }
+}
+
+function render() {
+  // Aggiorna il frame ridotto della webcam per il campionamento colori
+  if (video.readyState >= 2) {
+    sampleCtx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
+  }
+
+  requestAnimationFrame(render);
+}
+
+async function detectLoop() {
+  const results = poseLandmarker.detectForVideo(video, performance.now());
+
+  if (results.landmarks && results.landmarks.length > 0) {
+    drawTrails(results.landmarks[0]);
+  }
+
+  requestAnimationFrame(detectLoop);
+}
+
+function resetCanvas() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  particles = [];
+  previousPoints.clear();
+}
+
+function saveCanvas() {
   const link = document.createElement('a');
-  link.download = 'entropia-cinetica.png';
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  link.download = `entropia-cinetica-${timestamp}.png`;
   link.href = canvas.toDataURL('image/png');
   link.click();
 }
 
-function drawBrushStroke(x, y, color, intensity) {
-  const screenX = (1 - x / motionCanvas.width) * window.innerWidth;
-  const screenY = (y / motionCanvas.height) * window.innerHeight;
-
-  const length = 8 + intensity * 0.15;
-  const angle = Math.random() * Math.PI * 2;
-
-  const x2 = screenX + Math.cos(angle) * length;
-  const y2 = screenY + Math.sin(angle) * length;
-
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1 + intensity * 0.02;
-  ctx.globalAlpha = 0.12;
-  ctx.lineCap = 'round';
-
-  ctx.beginPath();
-  ctx.moveTo(screenX, screenY);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-
-  ctx.restore();
+async function goFullscreen() {
+  if (!document.fullscreenElement) {
+    await document.documentElement.requestFullscreen().catch(() => {});
+  }
 }
 
-function processFrame() {
-  if (video.readyState < 2) {
-    requestAnimationFrame(processFrame);
-    return;
-  }
+// UI
 
-  // Copia il frame video nel canvas interno
-  motionCtx.save();
-  motionCtx.scale(-1, 1);
-  motionCtx.drawImage(video, -motionCanvas.width, 0, motionCanvas.width, motionCanvas.height);
-  motionCtx.restore();
+document.getElementById('resetBtn').addEventListener('click', resetCanvas);
+document.getElementById('saveBtn').addEventListener('click', saveCanvas);
+document.getElementById('fullscreenBtn').addEventListener('click', goFullscreen);
 
-  const frame = motionCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height);
-  const data = frame.data;
-
-  if (previousFrame) {
-    // Campiona solo alcuni pixel per mantenere alta fluidità
-    for (let y = 0; y < motionCanvas.height; y += 4) {
-      for (let x = 0; x < motionCanvas.width; x += 4) {
-        const i = (y * motionCanvas.width + x) * 4;
-
-        const dr = Math.abs(data[i] - previousFrame[i]);
-        const dg = Math.abs(data[i + 1] - previousFrame[i + 1]);
-        const db = Math.abs(data[i + 2] - previousFrame[i + 2]);
-
-        const diff = dr + dg + db;
-
-        // Disegna solo se c'è movimento significativo
-        if (diff > 70) {
-          const r = data[i];
-          const g = data[i + 1];
-          const b = data[i + 2];
-          const color = `rgba(${r}, ${g}, ${b}, 0.18)`;
-
-          drawBrushStroke(x, y, color, diff);
-        }
-      }
-    }
-  }
-
-  previousFrame = new Uint8ClampedArray(data);
-
-  requestAnimationFrame(processFrame);
-}
+// Doppio click per nascondere UI
+let uiVisible = true;
+document.body.addEventListener('dblclick', () => {
+  uiVisible = !uiVisible;
+  document.getElementById('ui').style.display = uiVisible ? 'flex' : 'none';
+});
 
 async function init() {
+  resetCanvas();
   await setupCamera();
-  processFrame();
+  await setupPose();
+  render();
+  detectLoop();
+
+  // tenta fullscreen automatico
+  setTimeout(goFullscreen, 1000);
 }
 
 init().catch(err => {
-  alert('Errore: ' + err.message);
   console.error(err);
+  alert('Errore di inizializzazione: ' + err.message);
 });
 </script>
+
 </body>
 </html>
