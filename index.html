@@ -18,16 +18,11 @@ html, body {
   display: none;
 }
 
-/* 🎬 FRAME 16:9 CENTRATO */
 #canvas {
   position: fixed;
-  top: 50%;
-  left: 50%;
+  inset: 0;
   width: 100vw;
-  height: calc(100vw * 9 / 16);
-  transform: translate(-50%, -50%);
-  max-height: 100vh;
-  max-width: calc(100vh * 16 / 9);
+  height: 100vh;
 }
 
 #videoView {
@@ -64,7 +59,7 @@ button:hover {
   background: rgba(255,255,255,0.1);
 }
 
-/* SPLASH */
+/* SPLASH SCREEN */
 #splash {
   position: fixed;
   inset: 0;
@@ -100,6 +95,7 @@ button:hover {
 }
 </style>
 </head>
+
 <body>
 
 <!-- SPLASH -->
@@ -179,9 +175,10 @@ async function setupPose() {
   });
 }
 
-/* 🎨 COLORI PIÙ PRECISI (MEDIA AREA REALE CAMERA) */
+/* 🎨 COLORI MIGLIORATI: MEDIA AREA REALE CAMERA */
 const sampleCanvas = document.createElement('canvas');
 const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+
 sampleCanvas.width = 80;
 sampleCanvas.height = 80;
 
@@ -190,15 +187,15 @@ function getColorFromVideo(x, y) {
     return 'rgba(255,255,255,0.22)';
   }
 
-  const sx = (1 - x) * video.videoWidth;
-  const sy = y * video.videoHeight;
+  const cx = (1 - x) * video.videoWidth;
+  const cy = y * video.videoHeight;
 
-  const size = 6;
+  const size = 10;
 
   sampleCtx.drawImage(
     video,
-    sx - size / 2,
-    sy - size / 2,
+    cx - size / 2,
+    cy - size / 2,
     size,
     size,
     0,
@@ -209,7 +206,8 @@ function getColorFromVideo(x, y) {
 
   const data = sampleCtx.getImageData(0, 0, size, size).data;
 
-  let r = 0, g = 0, b = 0, count = 0;
+  let r = 0, g = 0, b = 0;
+  let count = 0;
 
   for (let i = 0; i < data.length; i += 4) {
     r += data[i];
@@ -218,9 +216,9 @@ function getColorFromVideo(x, y) {
     count++;
   }
 
-  r = Math.round(r / count);
-  g = Math.round(g / count);
-  b = Math.round(b / count);
+  r = (r / count) | 0;
+  g = (g / count) | 0;
+  b = (b / count) | 0;
 
   return `rgba(${r},${g},${b},0.22)`;
 }
@@ -278,9 +276,6 @@ function drawTrails(landmarks) {
 }
 
 function render() {
-  if (video.readyState >= 2) {
-    sampleCtx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
-  }
   requestAnimationFrame(render);
 }
 
