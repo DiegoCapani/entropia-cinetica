@@ -1,18 +1,18 @@
-# Entropia Cinetica — Versione Pennellata Direzionale
+# Entropia Cinetica — Versione Corretta (Pennellata Continua Direzionale)
 
-## Nuove funzionalità implementate
+## Funzionalità
 
 * Splash screen iniziale con pulsante "Avvia".
 * Motion detection da differenza frame.
-* Una sola pennellata continua per evento di movimento.
+* Una sola pennellata continua per movimento.
 * La pennellata segue la direzione reale del movimento.
+* Linee organiche continue (no segmenti, no punti).
 * Spessore linea aumentato del 50%.
-* Colori campionati dalla webcam in tempo reale.
-* Reset automatico ogni 15 secondi (memoria effimera).
+* Colori campionati dalla webcam.
+* Reset automatico ogni 15 secondi.
 * Pulsante Reset manuale.
 * Pulsante Salva PNG.
 * Pulsante Fullscreen.
-* Ottimizzazione performance per sessioni lunghe.
 
 ---
 
@@ -139,40 +139,27 @@ buf.height = 90;
 
 let prev;
 
-let drawing = false;
-let lastX = 0;
-let lastY = 0;
+let isDrawing = false;
+let prevX = 0;
+let prevY = 0;
 
-function stroke(x, y, vx, vy, color, intensity){
+let prevCx = 0;
+let prevCy = 0;
 
-  const sx = x * window.innerWidth / buf.width;
-  const sy = y * window.innerHeight / buf.height;
-
-  const len = 170 + intensity * 0.35;
-
-  const ex = sx + vx * len;
-  const ey = sy + vy * len;
-
-  const cx = (sx + ex) / 2 + (Math.random() - 0.5) * 40;
-  const cy = (sy + ey) / 2 + (Math.random() - 0.5) * 40;
-
+function drawLine(x1, y1, x2, y2, color, intensity){
   ctx.save();
+
   ctx.strokeStyle = color;
   ctx.globalAlpha = 0.16;
+  ctx.lineWidth = 2.1; // +50%
   ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  ctx.lineWidth = 2.1; // aumento 50%
 
   ctx.beginPath();
-  ctx.moveTo(lastX, lastY);
-  ctx.quadraticCurveTo(cx, cy, sx, sy);
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
   ctx.stroke();
 
   ctx.restore();
-
-  lastX = sx;
-  lastY = sy;
 }
 
 function loop(){
@@ -186,6 +173,7 @@ function loop(){
     let mx = 0;
     let my = 0;
     let count = 0;
+    let motion = 0;
 
     if(prev){
 
@@ -199,9 +187,10 @@ function loop(){
             Math.abs(d[i+1]-prev[i+1])+
             Math.abs(d[i+2]-prev[i+2]);
 
-          if(diff > 85){
+          if(diff > 80){
             mx += x;
             my += y;
+            motion += diff;
             count++;
           }
         }
@@ -212,21 +201,24 @@ function loop(){
         mx /= count;
         my /= count;
 
-        let vx = (mx - (lastX || mx)) / 255;
-        let vy = (my - (lastY || my)) / 255;
+        const sx = mx * window.innerWidth / buf.width;
+        const sy = my * window.innerHeight / buf.height;
 
         const color = `rgba(${d[0]},${d[1]},${d[2]},0.16)`;
 
-        if(!drawing){
-          drawing = true;
-          lastX = mx * window.innerWidth / buf.width;
-          lastY = my * window.innerHeight / buf.height;
+        if(!isDrawing){
+          isDrawing = true;
+          prevX = sx;
+          prevY = sy;
         }
 
-        stroke(mx,my,vx,vy,color,diff);
+        drawLine(prevX, prevY, sx, sy, color, motion);
+
+        prevX = sx;
+        prevY = sy;
 
       } else {
-        drawing = false;
+        isDrawing = false;
       }
     }
 
@@ -238,7 +230,7 @@ function loop(){
 
 function resetCanvas(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  drawing = false;
+  isDrawing = false;
 }
 
 function savePNG(){
