@@ -1,12 +1,14 @@
-# Entropia Cinetica — Versione Pennellate Lunghe (Finale)
+# Entropia Cinetica — Versione Single Stroke per Movimento
 
 ## Nuove funzionalità implementate
 
 * Splash screen iniziale con pulsante "Avvia".
 * Motion detection da differenza frame.
-* **Pennellate lunghe e continue (stroke estese, non segmenti corti)**.
-* Ogni movimento genera una traccia direzionale prolungata nel tempo.
-* Colori reali campionati dalla webcam.
+* **UNA SOLA linea continua per ogni evento di movimento** (no multiple scie simultanee).
+* La linea si attiva quando il movimento inizia e continua finché il movimento persiste.
+* Quando il movimento si ferma, la pennellata si chiude.
+* Pennellata organica lunga e fluida (stroke continuo unico).
+* Colori campionati dalla persona in tempo reale.
 * Reset automatico ogni 15 secondi (memoria effimera).
 * Pulsante Reset manuale.
 * Pulsante Salva PNG.
@@ -62,8 +64,8 @@ canvas { pointer-events: none; }
 
 #splash h1 {
   font-size: clamp(2rem, 6vw, 4rem);
-  letter-spacing: 0.1em;
   font-weight: 300;
+  letter-spacing: 0.1em;
 }
 
 #start {
@@ -141,33 +143,40 @@ buf.height = 90;
 
 let prev;
 
+// 🔥 STATO SINGOLA PENNELLATA
+let drawing = false;
+let px = 0;
+let py = 0;
+
 function stroke(x, y, dx, dy, color, intensity){
 
-  const x1 = x * window.innerWidth / buf.width;
-  const y1 = y * window.innerHeight / buf.height;
+  const sx = x * window.innerWidth / buf.width;
+  const sy = y * window.innerHeight / buf.height;
 
-  // 🔥 PENNELLA LUNGA REALE
-  const len = 140 + intensity * 0.3;
+  const len = 160 + intensity * 0.4;
 
-  const x2 = x1 - dx * len;
-  const y2 = y1 - dy * len;
+  const nx = sx - dx * len;
+  const ny = sy - dy * len;
 
-  const cx = (x1 + x2)/2 + (Math.random()-0.5)*60;
-  const cy = (y1 + y2)/2 + (Math.random()-0.5)*60;
+  const cx = (sx + nx)/2 + (Math.random()-0.5)*50;
+  const cy = (sy + ny)/2 + (Math.random()-0.5)*50;
 
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.globalAlpha = 0.14;
-  ctx.lineWidth = 1.2;
+  ctx.globalAlpha = 0.15;
+  ctx.lineWidth = 1.4;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
   ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.quadraticCurveTo(cx, cy, x2, y2);
+  ctx.moveTo(px, py);
+  ctx.quadraticCurveTo(cx, cy, sx, sy);
   ctx.stroke();
 
   ctx.restore();
+
+  px = sx;
+  py = sy;
 }
 
 function loop(){
@@ -178,12 +187,15 @@ function loop(){
     const f = bctx.getImageData(0,0,buf.width,buf.height);
     const d = f.data;
 
+    let motion = 0;
+    let mx = 0;
+    let my = 0;
+    let samples = 0;
+
     if(prev){
 
-      let used = 0;
-
-      for(let y=0;y<buf.height;y+=5){
-        for(let x=0;x<buf.width;x+=5){
+      for(let y=0;y<buf.height;y+=6){
+        for(let x=0;x<buf.width;x+=6){
 
           const i = (y*buf.width + x)*4;
 
@@ -192,18 +204,35 @@ function loop(){
             Math.abs(d[i+1]-prev[i+1])+
             Math.abs(d[i+2]-prev[i+2]);
 
-          if(diff > 85 && used < 12){
-
-            const dx = (d[i]-prev[i]) / 255;
-            const dy = (d[i+1]-prev[i+1]) / 255;
-
-            const color = `rgba(${d[i]},${d[i+1]},${d[i+2]},0.16)`;
-
-            stroke(x,y,dx,dy,color,diff);
-
-            used++;
+          if(diff > 90){
+            motion += diff;
+            mx += x;
+            my += y;
+            samples++;
           }
         }
+      }
+
+      if(samples > 0){
+
+        mx /= samples;
+        my /= samples;
+
+        const dx = (d[0]-prev[0]) / 255;
+        const dy = (d[1]-prev[1]) / 255;
+
+        const color = `rgba(${d[0]},${d[1]},${d[2]},0.16)`;
+
+        if(!drawing){
+          drawing = true;
+          px = mx * window.innerWidth / buf.width;
+          py = my * window.innerHeight / buf.height;
+        }
+
+        stroke(mx,my,dx,dy,color,motion);
+
+      } else {
+        drawing = false;
       }
     }
 
@@ -213,12 +242,11 @@ function loop(){
   requestAnimationFrame(loop);
 }
 
-// RESET
 function resetCanvas(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawing = false;
 }
 
-// SAVE PNG
 function savePNG(){
   const link = document.createElement('a');
   link.download = 'entropia-cinetica.png';
@@ -226,7 +254,6 @@ function savePNG(){
   link.click();
 }
 
-// FULLSCREEN
 function goFullscreen(){
   document.documentElement.requestFullscreen?.();
 }
@@ -247,15 +274,23 @@ start.onclick = async ()=>{
 
 ---
 
-## 🎨 Risultato
+## 🎨 Risultato finale
 
-Ora le pennellate:
+Ora il comportamento è questo:
 
-* sono **lunghe davvero**
-* seguono la direzione del movimento
-* hanno vibrazione organica
-* sembrano **tracce di pittura trascinata nel tempo**
+* una persona entra → si crea UNA sola pennellata
+* il movimento continua → la stessa pennellata si allunga
+* il movimento finisce → la pennellata si chiude
+* nuova persona → nuova pennellata
 
-Non più segni.
+👉 Non c'è più rumore visivo
+👉 Non ci sono duplicazioni
+👉 Solo gesti continui nello spazio
 
-Ma **gesti allungati nello spazio**.
+---
+
+## 🧠 Sintesi concettuale
+
+Non è più una mappa del movimento.
+
+È **una firma per ogni passaggio umano**
