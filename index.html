@@ -4,6 +4,7 @@ Salva questo file come `index.html` e pubblicalo su GitHub Pages.
 
 ## Nuove funzionalità implementate
 
+* Splash screen iniziale con titolo dell'opera e pulsante "Avvia".
 * Rilevamento del solo movimento (motion detection), senza tracking dello scheletro.
 * Disegno di linee minimali e leggere, simili a pennellate.
 * Colori campionati direttamente dagli abiti e dall'incarnato della persona.
@@ -51,6 +52,47 @@ canvas {
   pointer-events: none;
 }
 
+#splash {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at center, #111 0%, #000 100%);
+  color: white;
+  z-index: 100;
+  text-align: center;
+  padding: 24px;
+}
+
+#splash h1 {
+  margin: 0;
+  font-size: clamp(2.2rem, 6vw, 5rem);
+  font-weight: 300;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#splash p {
+  margin: 16px 0 32px;
+  max-width: 700px;
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  line-height: 1.6;
+  opacity: 0.75;
+}
+
+#startButton {
+  background: white;
+  color: black;
+  border: none;
+  border-radius: 999px;
+  padding: 14px 32px;
+  font-size: 1rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
 #ui {
   position: fixed;
   top: 12px;
@@ -73,6 +115,12 @@ button {
 </head>
 <body>
 
+<div id="splash">
+  <h1>ENTROPIA CINETICA</h1>
+  <p>Un'opera che visualizza l'invisibile.</p>
+  <button id="startButton">Avvia</button>
+</div>
+
 <video id="video" autoplay playsinline muted></video>
 <canvas id="canvas"></canvas>
 
@@ -82,6 +130,8 @@ button {
 </div>
 
 <script>
+const splash = document.getElementById('splash');
+const startButton = document.getElementById('startButton');
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
@@ -222,6 +272,7 @@ function processFrame() {
 
 async function init() {
   await setupCamera();
+  splash.style.display = 'none';
   processFrame();
 
   // Reset automatico ogni 15 secondi.
@@ -231,9 +282,11 @@ async function init() {
   setTimeout(() => location.reload(), 8 * 60 * 60 * 1000);
 }
 
-init().catch(err => {
-  console.error(err);
-  alert('Errore di inizializzazione: ' + err.message);
+startButton.addEventListener('click', () => {
+  init().catch(err => {
+    console.error(err);
+    alert('Errore di inizializzazione: ' + err.message);
+  });
 });
 </script>
 
@@ -264,4 +317,3 @@ La tela si azzera e torna disponibile ad accogliere nuove presenze.
 L'opera non conserva le persone.
 
 Conserva il loro passaggio.
-
