@@ -95,6 +95,7 @@ button:hover {
 }
 </style>
 </head>
+
 <body>
 
 <!-- SPLASH -->
@@ -118,13 +119,11 @@ button:hover {
 import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
 
 const video = document.getElementById('video');
-const videoView = document.getElementById('videoView');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
 let poseLandmarker;
 let previousPoints = new Map();
-let particles = [];
 let lastStrokeTime = new Map();
 
 const LANDMARK_INDEXES = [
@@ -140,11 +139,8 @@ function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = window.innerWidth * dpr;
   canvas.height = window.innerHeight * dpr;
-  canvas.style.width = window.innerWidth + 'px';
-  canvas.style.height = window.innerHeight + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
@@ -155,7 +151,6 @@ async function setupCamera() {
   });
 
   video.srcObject = stream;
-  videoView.srcObject = stream;
 
   return new Promise(resolve => {
     video.onloadedmetadata = () => {
@@ -180,24 +175,68 @@ async function setupPose() {
   });
 }
 
+/* 🎨 COLORI POTENZIATI (PIÙ VIVI + CONTRASTATI) */
 const sampleCanvas = document.createElement('canvas');
 const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
-sampleCanvas.width = 160;
-sampleCanvas.height = 90;
+
+sampleCanvas.width = 80;
+sampleCanvas.height = 80;
 
 function getColorFromVideo(x, y) {
   if (!video.videoWidth || !video.videoHeight) {
-    return 'rgba(255,255,255,0.22)';
+    return 'rgba(255,255,255,0.25)';
   }
 
-  const sx = Math.floor((1 - x) * sampleCanvas.width);
-  const sy = Math.floor(y * sampleCanvas.height);
+  const cx = (1 - x) * video.videoWidth;
+  const cy = y * video.videoHeight;
 
-  const px = Math.max(0, Math.min(sampleCanvas.width - 1, sx));
-  const py = Math.max(0, Math.min(sampleCanvas.height - 1, sy));
+  const size = 12;
 
-  const data = sampleCtx.getImageData(px, py, 1, 1).data;
-  return `rgba(${data[0]}, ${data[1]}, ${data[2]}, 0.20)`;
+  sampleCtx.drawImage(
+    video,
+    cx - size / 2,
+    cy - size / 2,
+    size,
+    size,
+    0,
+    0,
+    size,
+    size
+  );
+
+  const data = sampleCtx.getImageData(0, 0, size, size).data;
+
+  let r = 0, g = 0, b = 0;
+  let count = 0;
+
+  for (let i = 0; i < data.length; i += 4) {
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+    count++;
+  }
+
+  r /= count;
+  g /= count;
+  b /= count;
+
+  // 🔥 BOOST saturazione
+  r *= 1.18;
+  g *= 1.12;
+  b *= 1.22;
+
+  // 🎯 contrasto locale (più separazione cromatica)
+  const avg = (r + g + b) / 3;
+  r += (r - avg) * 0.30;
+  g += (g - avg) * 0.30;
+  b += (b - avg) * 0.30;
+
+  // clamp
+  r = Math.max(0, Math.min(255, r));
+  g = Math.max(0, Math.min(255, g));
+  b = Math.max(0, Math.min(255, b));
+
+  return `rgba(${r|0}, ${g|0}, ${b|0}, 0.28)`;
 }
 
 function drawTrails(landmarks) {
@@ -271,7 +310,6 @@ async function detectLoop() {
 
 function resetCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  particles = [];
   previousPoints.clear();
 }
 
@@ -289,12 +327,12 @@ async function goFullscreen() {
   }
 }
 
-// UI
+/* UI */
 document.getElementById('resetBtn').addEventListener('click', resetCanvas);
 document.getElementById('saveBtn').addEventListener('click', saveCanvas);
 document.getElementById('fullscreenBtn').addEventListener('click', goFullscreen);
 
-// SPLASH START
+/* START */
 document.getElementById('startApp').addEventListener('click', async () => {
   document.getElementById('splash').style.display = 'none';
 
@@ -305,7 +343,6 @@ document.getElementById('startApp').addEventListener('click', async () => {
   render();
   detectLoop();
 
-  // RESET OGNI 3 MINUTI
   setInterval(resetCanvas, 180000);
 });
 </script>
