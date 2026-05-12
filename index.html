@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <title>Entropia Cinetica - Città Visibile 2026</title>
+    <!-- Librerie: A-Frame, AR.js per A-Frame, e p5.js per l'arte generativa -->
+    <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+        #canvas-container { position: absolute; top: 0; left: 0; z-index: -1; }
+        .ui-overlay {
+            position: absolute; bottom: 20px; left: 20px;
+            color: white; background: rgba(0,0,0,0.5);
+            padding: 10px; border-radius: 5px; pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="ui-overlay">
+        <strong>ENTROPIA CINETICA</strong><br>
+        Installazione Collettiva - Diego Capani
+    </div>
+
+    <!-- Scena AR -->
+    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;" vr-mode-ui="enabled: false">
+        
+        <!-- Usiamo un Marker Hiro come ancora per la tela digitale -->
+        <a-marker preset="hiro">
+            <!-- La tela dove appariranno le scie -->
+            <a-plane id="painting-surface" position="0 0 0" rotation="-90 0 0" 
+                     width="4" height="4" material="shader: flat; transparent: true; opacity: 0.9">
+            </a-plane>
+        </a-marker>
+
+        <a-entity camera></a-entity>
+    </a-scene>
+
+    <script>
+        let video;
+        let prevFrame;
+        let canvasGraphics; // Buffer per la persistenza
+        let threshold = 20; // Sensibilità al movimento
+
+        function setup() {
+            // Creiamo un canvas piccolo per l'analisi e uno per il disegno
+            const p5Canvas = createCanvas(640, 480);
+            p5Canvas.parent('canvas-container');
+            
+            // Cattura video dalla webcam utilizzata da AR.js
+            video = createCapture(VIDEO);
+            video.size(640, 480);
+            video.hide();
+
+            // Il buffer "canvasGraphics" non viene mai pulito: qui risiede la persistenza
+            canvasGraphics = createGraphics(800, 800);
+            canvasGraphics.background(0, 0); // Trasparente all'inizio
+            
+            prevFrame = createImage(video.width, video.height);
+        }
+
+        function draw() {
+            video.loadPixels();
+            prevFrame.loadPixels();
+
+            if (video.pixels.length > 0) {
+                // Analisi del movimento e campionamento colore
+                for (let x = 0; x < video.width; x += 10) {
+                    for (let y = 0; y < video.height; y += 10) {
+                        let index = (x + y * video.width) * 4;
+                        
+                        let r = video.pixels[index];
+                        let g = video.pixels[index + 1];
+                        let b = video.pixels[index + 2];
+
+                        let pr = prevFrame.pixels[index];
+                        let pg = prevFrame.pixels[index + 1];
+                        let pb = prevFrame.pixels[index + 2];
+
+                        // Calcola la differenza tra frame (entropia cinetica)
+                        let diff = dist(r, g, b, pr, pg, pb);
+
+                        if (diff > threshold) {
+                            // Campionamento colore dinamico dagli abiti/incarnato
+                            canvasGraphics.noStroke();
+                            canvasGraphics.fill(r, g, b, 50); // Bassa opacità per stratificazione
+                            
+                            // Disegna segni organici (scie)
+                            let mappedX = map(x, 0, video.width, 0, canvasGraphics.width);
+                            let mappedY = map(y, 0, video.height, 0, canvasGraphics.height);
+                            canvasGraphics.ellipse(mappedX, mappedY, diff / 2, diff / 2);
+                        }
+                    }
+                }
+
+                // Aggiorna il frame precedente
+                prevFrame.copy(video, 0, 0, video.width, video.height, 0, 0, video.width, video.height);
+
+                // Applichiamo la texture p5.js alla superficie A-Frame
+                updateARTexture();
+            }
+        }
+
+        function updateARTexture() {
+            const mesh = document.getElementById('painting-surface').getObject3D('mesh');
+            if (mesh) {
+                const texture = new THREE.CanvasTexture(canvasGraphics.elt);
+                if (mesh.material.map) mesh.material.map.dispose();
+                mesh.material.map = texture;
+                mesh.material.needsUpdate = true;
+            }
+        }
+
+        // Funzione per resettare la tela (es. ogni mattina)
+        function keyPressed() {
+            if (key === 'r' || key === 'R') {
+                canvasGraphics.clear();
+                canvasGraphics.background(0, 0);
+            }
+        }
+    </script>
+
+    <div id="canvas-container"></div>
+</body>
+</html>
