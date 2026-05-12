@@ -3,32 +3,34 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>ENTROPIA CINETICA | Diego Capani</title>
+    <title>ENTROPIA CINETICA V0.1</title>
     <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #000; }
-        #overlay {
-            position: absolute; top: 20px; left: 20px; color: white;
-            z-index: 10; font-family: 'Courier New', monospace; pointer-events: none;
+        #ui {
+            position: absolute; bottom: 20px; left: 20px; color: #0f0;
+            z-index: 100; font-family: 'Courier New', monospace; font-size: 12px;
+            pointer-events: none; text-transform: uppercase;
         }
         #btn-start {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            padding: 20px; z-index: 100; cursor: pointer; background: white; border: none;
+            padding: 25px; z-index: 1000; cursor: pointer; 
+            background: #0f0; color: #000; border: none; font-weight: bold;
         }
     </style>
 </head>
 <body>
 
-    <div id="overlay">ENTROPIA CINETICA<br>Diego Capani - 2026</div>
-    <button id="btn-start">ATTIVA INSTALLAZIONE</button>
+    <div id="ui">Status: Entropia Cinetica V0.1<br>System: Cumulative Buffer Active</div>
+    <button id="btn-start">INIZIALIZZA V0.1</button>
 
     <a-scene id="scena" embedded arjs="sourceType: webcam; debugUIEnabled: false;" vr-mode-ui="enabled: false" style="display:none;">
         <a-marker preset="hiro">
-            <!-- La superficie deve avere un materiale che p5 può aggiornare -->
-            <a-plane id="tela" position="0 0 0" rotation="-90 0 0" width="3" height="3" 
-                     material="shader: flat; transparent: true; opacity: 1;">
+            <!-- Usiamo un materiale flat per massima visibilità dei colori -->
+            <a-plane id="tela" position="0 0 0" rotation="-90 0 0" width="4" height="4" 
+                     material="shader: flat; transparent: true; opacity: 1; side: double;">
             </a-plane>
         </a-marker>
         <a-entity camera></a-entity>
@@ -36,84 +38,94 @@
 
     <script>
         let video;
-        let pg; // Il buffer persistente (la nostra tela digitale)
-        let prevImg;
-        const threshold = 30;
+        let p5Canvas;
+        let persistentBuffer; // La memoria storica dell'installazione
+        let prevFrame;
+        let isReady = false;
 
         document.getElementById('btn-start').addEventListener('click', function() {
             this.style.display = 'none';
             document.getElementById('scena').style.display = 'block';
-            setupP5();
+            initCreativeEngine();
         });
 
-        function setupP5() {
+        function initCreativeEngine() {
             new p5((p) => {
                 p.setup = () => {
-                    p.createCanvas(320, 240).hide();
+                    // Creiamo il canvas di analisi (nascosto)
+                    p5Canvas = p.createCanvas(320, 240);
+                    p5Canvas.hide();
+                    
                     video = p.createCapture(p.VIDEO);
                     video.size(320, 240);
                     video.hide();
 
-                    // CREAZIONE TELA PERSISTENTE
-                    pg = p.createGraphics(1024, 1024);
-                    pg.clear(); // Inizia totalmente trasparente
+                    // BUFFER PERSISTENTE: Qui i dati NON vengono mai cancellati
+                    persistentBuffer = p.createGraphics(1024, 1024);
+                    persistentBuffer.clear(); 
                     
-                    prevImg = p.createImage(320, 240);
+                    prevFrame = p.createImage(320, 240);
+                    isReady = true;
                 };
 
                 p.draw = () => {
-                    if (!video.loadedmetadata) return;
+                    if (!isReady || !video.loadedmetadata) return;
 
                     video.loadPixels();
-                    prevImg.loadPixels();
+                    prevFrame.loadPixels();
 
-                    // Logica di campionamento e traccia
-                    let activePixels = 0;
+                    // Analisi differenza frame per catturare la "traccia"
+                    let threshold = 25; 
+                    let hasMoved = false;
 
-                    for (let y = 0; y < video.height; y += 6) {
-                        for (let x = 0; x < video.width; x += 6) {
+                    for (let y = 0; y < video.height; y += 4) {
+                        for (let x = 0; x < video.width; x += 4) {
                             let i = (x + y * video.width) * 4;
                             
-                            let r1 = video.pixels[i];
-                            let g1 = video.pixels[i+1];
-                            let b1 = video.pixels[i+2];
+                            let r = video.pixels[i];
+                            let g = video.pixels[i+1];
+                            let b = video.pixels[i+2];
 
-                            let r2 = prevImg.pixels[i];
-                            let g2 = prevImg.pixels[i+1];
-                            let b2 = prevImg.pixels[i+2];
+                            let pr = prevFrame.pixels[i];
+                            let pg = prevFrame.pixels[i+1];
+                            let pb = prevFrame.pixels[i+2];
 
-                            let diff = p.dist(r1, g1, b1, r2, g2, b2);
+                            let diff = p.dist(r, g, b, pr, pg, pb);
 
                             if (diff > threshold) {
-                                // DISEGNO SULLA TELA PERSISTENTE (pg)
-                                // Usiamo coordinate mappate per coprire la tela 1024x1024
-                                let tx = p.map(x, 0, video.width, 0, pg.width);
-                                let ty = p.map(y, 0, video.height, 0, pg.height);
+                                // Mappatura spaziale sulla tela AR
+                                let tx = p.map(x, 0, video.width, 0, persistentBuffer.width);
+                                let ty = p.map(y, 0, video.height, 0, persistentBuffer.height);
                                 
-                                pg.noStroke();
-                                pg.fill(r1, g1, b1, 150); // Colore reale campionato dagli abiti
-                                pg.ellipse(tx, ty, diff * 0.8, diff * 0.8);
-                                activePixels++;
+                                // DISEGNO CUMULATIVO
+                                persistentBuffer.noStroke();
+                                persistentBuffer.fill(r, g, b, 180); // Alta opacità per segni netti
+                                persistentBuffer.ellipse(tx, ty, diff * 0.5, diff * 0.5);
+                                hasMoved = true;
                             }
                         }
                     }
 
-                    if (activePixels > 0) {
-                        prevImg.copy(video, 0, 0, 320, 240, 0, 0, 320, 240);
-                        updateAR();
+                    if (hasMoved) {
+                        // Aggiorna la memoria del movimento
+                        prevFrame.copy(video, 0, 0, 320, 240, 0, 0, 320, 240);
+                        // Inietta la memoria visiva nella realtà aumentata
+                        updateARTexture();
                     }
                 };
 
-                function updateAR() {
+                function updateARTexture() {
                     const plane = document.getElementById('tela');
                     if (plane && plane.getObject3D('mesh')) {
                         const mesh = plane.getObject3D('mesh');
-                        const texture = new THREE.CanvasTexture(pg.elt);
                         
-                        // IMPORTANTE: Disporre della vecchia texture per non saturare la GPU
+                        // Creiamo la texture dal buffer persistente
+                        const newTexture = new THREE.CanvasTexture(persistentBuffer.elt);
+                        
+                        // Pulizia memoria GPU per evitare crash su mobile
                         if (mesh.material.map) mesh.material.map.dispose();
                         
-                        mesh.material.map = texture;
+                        mesh.material.map = newTexture;
                         mesh.material.needsUpdate = true;
                     }
                 }
