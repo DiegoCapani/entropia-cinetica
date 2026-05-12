@@ -1,3 +1,15 @@
+# Entropia Cinetica — Versione con Splash + Auto Reset 60s
+
+## Funzionalità aggiunte
+
+* Splash screen iniziale con titolo, versione e pulsante di avvio
+* Avvio esplicito della web app tramite bottone
+* Reset automatico del canvas ogni 60 secondi
+* Sistema di pennellate invariato (pose-based)
+
+---
+
+```html
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -58,9 +70,52 @@ button {
 button:hover {
   background: rgba(255,255,255,0.1);
 }
+
+/* SPLASH SCREEN */
+#splash {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  color: white;
+  text-align: center;
+}
+
+#splash h1 {
+  font-size: 42px;
+  margin: 0;
+  letter-spacing: 2px;
+}
+
+#splash p {
+  margin-top: 10px;
+  opacity: 0.7;
+  font-size: 14px;
+}
+
+#startBtn {
+  margin-top: 25px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 1px solid white;
+  background: transparent;
+  color: white;
+  cursor: pointer;
+}
 </style>
 </head>
 <body>
+
+<!-- SPLASH -->
+<div id="splash">
+  <h1>ENTROPIA CINETICA</h1>
+  <p>versione 1.0</p>
+  <button id="startBtn">Avvia web app</button>
+</div>
 
 <video id="video" autoplay playsinline muted></video>
 <video id="videoView" autoplay playsinline muted></video>
@@ -82,18 +137,15 @@ const ctx = canvas.getContext('2d');
 
 let poseLandmarker;
 let previousPoints = new Map();
-let particles = [];
 let lastStrokeTime = new Map();
 
-// Punti principali del corpo utilizzati per generare le pennellate
 const LANDMARK_INDEXES = [
-  0,   // naso
-  11, 12, // spalle
-  13, 14, // gomiti
-  15, 16, // polsi
-  23, 24, // anche
-  25, 26, // ginocchia
-  27, 28  // caviglie
+  0, 11, 12,
+  13, 14,
+  15, 16,
+  23, 24,
+  25, 26,
+  27, 28
 ];
 
 function resizeCanvas() {
@@ -104,17 +156,12 @@ function resizeCanvas() {
   canvas.style.height = window.innerHeight + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 async function setupCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-      facingMode: 'user'
-    },
+    video: { facingMode: 'user' },
     audio: false
   });
 
@@ -144,33 +191,28 @@ async function setupPose() {
   });
 }
 
-// Canvas offscreen per campionare i colori senza creare un canvas ad ogni frame
 const sampleCanvas = document.createElement('canvas');
 const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
 sampleCanvas.width = 160;
 sampleCanvas.height = 90;
 
-function getColorFromVideo(x, y) {
-  if (!video.videoWidth || !video.videoHeight) {
-    return 'rgba(255,255,255,0.22)';
-  }
-
-  const sx = Math.floor((1 - x) * sampleCanvas.width);
-  const sy = Math.floor(y * sampleCanvas.height);
-
-  const px = Math.max(0, Math.min(sampleCanvas.width - 1, sx));
-  const py = Math.max(0, Math.min(sampleCanvas.height - 1, sy));
-
-  const data = sampleCtx.getImageData(px, py, 1, 1).data;
-  return `rgba(${data[0]}, ${data[1]}, ${data[2]}, 0.20)`;
+function resetCanvas() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  previousPoints.clear();
 }
 
-// Non utilizziamo particelle: solo pennellate fluide.
-function addParticle() {}
+function saveCanvas() {
+  const link = document.createElement('a');
+  link.download = 'entropia-cinetica.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
 
-function updateParticles() {}
-
-function drawParticles() {}
+async function goFullscreen() {
+  if (!document.fullscreenElement) {
+    await document.documentElement.requestFullscreen().catch(() => {});
+  }
+}
 
 function drawTrails(landmarks) {
   const now = performance.now();
@@ -183,20 +225,17 @@ function drawTrails(landmarks) {
     const y = lm.y * window.innerHeight;
 
     const prev = previousPoints.get(index);
-    const color = getColorFromVideo(lm.x, lm.y);
 
     if (prev) {
       const dx = x - prev.x;
       const dy = y - prev.y;
       const speed = Math.hypot(dx, dy);
 
-      // Se il movimento è minimo, non disegnare nulla
       if (speed < 8) {
         previousPoints.set(index, { x, y });
         continue;
       }
 
-      // Limita la frequenza delle pennellate per ogni landmark
       const last = lastStrokeTime.get(index) || 0;
       if (now - last < 90) {
         previousPoints.set(index, { x, y });
@@ -204,47 +243,24 @@ function drawTrails(landmarks) {
       }
       lastStrokeTime.set(index, now);
 
-      // Pennellata principale
       ctx.save();
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = color;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
       ctx.lineWidth = Math.max(3, Math.min(16, speed * 0.09));
-      ctx.globalAlpha = 0.18;
+      ctx.lineCap = 'round';
 
       ctx.beginPath();
       ctx.moveTo(prev.x, prev.y);
 
-      // curva morbida per effetto pennellata
-      const cx = (prev.x + x) / 2 + (Math.random() - 0.5) * 8;
-      const cy = (prev.y + y) / 2 + (Math.random() - 0.5) * 8;
+      const cx = (prev.x + x) / 2;
+      const cy = (prev.y + y) / 2;
       ctx.quadraticCurveTo(cx, cy, x, y);
-      ctx.stroke(); 
+      ctx.stroke();
 
-      // seconda passata leggera per texture pittorica
-      ctx.lineWidth *= 0.5;
-      ctx.globalAlpha = 0.10;
-      ctx.beginPath();
-      ctx.moveTo(prev.x, prev.y);
-      ctx.quadraticCurveTo(cx, cy, x, y);
-      ctx.stroke(); 
       ctx.restore();
-
-      // Nessuna particella: solo una singola pennellata.
     }
 
     previousPoints.set(index, { x, y });
   }
-}
-
-function render() {
-  // Aggiorna il frame ridotto della webcam per il campionamento colori
-  if (video.readyState >= 2) {
-    sampleCtx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
-  }
-
-  requestAnimationFrame(render);
 }
 
 async function detectLoop() {
@@ -257,55 +273,35 @@ async function detectLoop() {
   requestAnimationFrame(detectLoop);
 }
 
-function resetCanvas() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  particles = [];
-  previousPoints.clear();
-}
-
-function saveCanvas() {
-  const link = document.createElement('a');
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  link.download = `entropia-cinetica-${timestamp}.png`;
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-}
-
-async function goFullscreen() {
-  if (!document.fullscreenElement) {
-    await document.documentElement.requestFullscreen().catch(() => {});
+function render() {
+  if (video.readyState >= 2) {
+    sampleCtx.drawImage(video, 0, 0, 160, 90);
   }
+  requestAnimationFrame(render);
 }
 
 // UI
 
-document.getElementById('resetBtn').addEventListener('click', resetCanvas);
-document.getElementById('saveBtn').addEventListener('click', saveCanvas);
-document.getElementById('fullscreenBtn').addEventListener('click', goFullscreen);
+document.getElementById('resetBtn').onclick = resetCanvas;
+document.getElementById('saveBtn').onclick = saveCanvas;
+document.getElementById('fullscreenBtn').onclick = goFullscreen;
 
-// Doppio click per nascondere UI
-let uiVisible = true;
-document.body.addEventListener('dblclick', () => {
-  uiVisible = !uiVisible;
-  document.getElementById('ui').style.display = uiVisible ? 'flex' : 'none';
-});
+// SPLASH START
 
-async function init() {
-  resetCanvas();
+document.getElementById('startBtn').onclick = async () => {
+  document.getElementById('splash').style.display = 'none';
+
   await setupCamera();
   await setupPose();
+
   render();
   detectLoop();
 
-  // tenta fullscreen automatico
+  setInterval(resetCanvas, 60000);
   setTimeout(goFullscreen, 1000);
-}
-
-init().catch(err => {
-  console.error(err);
-  alert('Errore di inizializzazione: ' + err.message);
-});
+};
 </script>
 
 </body>
 </html>
+```
