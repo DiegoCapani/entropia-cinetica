@@ -1,19 +1,18 @@
-# Entropia Cinetica — Versione Single Stroke per Movimento
+# Entropia Cinetica — Versione Pennellata Direzionale
 
 ## Nuove funzionalità implementate
 
 * Splash screen iniziale con pulsante "Avvia".
 * Motion detection da differenza frame.
-* **UNA SOLA linea continua per ogni evento di movimento** (no multiple scie simultanee).
-* La linea si attiva quando il movimento inizia e continua finché il movimento persiste.
-* Quando il movimento si ferma, la pennellata si chiude.
-* Pennellata organica lunga e fluida (stroke continuo unico).
-* Colori campionati dalla persona in tempo reale.
+* Una sola pennellata continua per evento di movimento.
+* La pennellata segue la direzione reale del movimento.
+* Spessore linea aumentato del 50%.
+* Colori campionati dalla webcam in tempo reale.
 * Reset automatico ogni 15 secondi (memoria effimera).
 * Pulsante Reset manuale.
 * Pulsante Salva PNG.
 * Pulsante Fullscreen.
-* Ottimizzazione performance per lunghe sessioni.
+* Ottimizzazione performance per sessioni lunghe.
 
 ---
 
@@ -48,7 +47,6 @@ video {
 
 canvas { pointer-events: none; }
 
-/* SPLASH */
 #splash {
   position: fixed;
   inset: 0;
@@ -77,7 +75,6 @@ canvas { pointer-events: none; }
   font-weight: bold;
 }
 
-/* UI */
 #ui {
   position: fixed;
   top: 10px;
@@ -135,7 +132,6 @@ async function cam(){
   video.srcObject = stream;
 }
 
-// LOW RES BUFFER
 const buf = document.createElement('canvas');
 const bctx = buf.getContext('2d', { willReadFrequently: true });
 buf.width = 140;
@@ -143,40 +139,40 @@ buf.height = 90;
 
 let prev;
 
-// 🔥 STATO SINGOLA PENNELLATA
 let drawing = false;
-let px = 0;
-let py = 0;
+let lastX = 0;
+let lastY = 0;
 
-function stroke(x, y, dx, dy, color, intensity){
+function stroke(x, y, vx, vy, color, intensity){
 
   const sx = x * window.innerWidth / buf.width;
   const sy = y * window.innerHeight / buf.height;
 
-  const len = 160 + intensity * 0.4;
+  const len = 170 + intensity * 0.35;
 
-  const nx = sx - dx * len;
-  const ny = sy - dy * len;
+  const ex = sx + vx * len;
+  const ey = sy + vy * len;
 
-  const cx = (sx + nx)/2 + (Math.random()-0.5)*50;
-  const cy = (sy + ny)/2 + (Math.random()-0.5)*50;
+  const cx = (sx + ex) / 2 + (Math.random() - 0.5) * 40;
+  const cy = (sy + ey) / 2 + (Math.random() - 0.5) * 40;
 
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.globalAlpha = 0.15;
-  ctx.lineWidth = 1.4;
+  ctx.globalAlpha = 0.16;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
+  ctx.lineWidth = 2.1; // aumento 50%
+
   ctx.beginPath();
-  ctx.moveTo(px, py);
+  ctx.moveTo(lastX, lastY);
   ctx.quadraticCurveTo(cx, cy, sx, sy);
   ctx.stroke();
 
   ctx.restore();
 
-  px = sx;
-  py = sy;
+  lastX = sx;
+  lastY = sy;
 }
 
 function loop(){
@@ -187,10 +183,9 @@ function loop(){
     const f = bctx.getImageData(0,0,buf.width,buf.height);
     const d = f.data;
 
-    let motion = 0;
     let mx = 0;
     let my = 0;
-    let samples = 0;
+    let count = 0;
 
     if(prev){
 
@@ -204,32 +199,31 @@ function loop(){
             Math.abs(d[i+1]-prev[i+1])+
             Math.abs(d[i+2]-prev[i+2]);
 
-          if(diff > 90){
-            motion += diff;
+          if(diff > 85){
             mx += x;
             my += y;
-            samples++;
+            count++;
           }
         }
       }
 
-      if(samples > 0){
+      if(count > 0){
 
-        mx /= samples;
-        my /= samples;
+        mx /= count;
+        my /= count;
 
-        const dx = (d[0]-prev[0]) / 255;
-        const dy = (d[1]-prev[1]) / 255;
+        let vx = (mx - (lastX || mx)) / 255;
+        let vy = (my - (lastY || my)) / 255;
 
         const color = `rgba(${d[0]},${d[1]},${d[2]},0.16)`;
 
         if(!drawing){
           drawing = true;
-          px = mx * window.innerWidth / buf.width;
-          py = my * window.innerHeight / buf.height;
+          lastX = mx * window.innerWidth / buf.width;
+          lastY = my * window.innerHeight / buf.height;
         }
 
-        stroke(mx,my,dx,dy,color,motion);
+        stroke(mx,my,vx,vy,color,diff);
 
       } else {
         drawing = false;
@@ -271,26 +265,3 @@ start.onclick = async ()=>{
 </body>
 </html>
 ```
-
----
-
-## 🎨 Risultato finale
-
-Ora il comportamento è questo:
-
-* una persona entra → si crea UNA sola pennellata
-* il movimento continua → la stessa pennellata si allunga
-* il movimento finisce → la pennellata si chiude
-* nuova persona → nuova pennellata
-
-👉 Non c'è più rumore visivo
-👉 Non ci sono duplicazioni
-👉 Solo gesti continui nello spazio
-
----
-
-## 🧠 Sintesi concettuale
-
-Non è più una mappa del movimento.
-
-È **una firma per ogni passaggio umano**
