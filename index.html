@@ -1,17 +1,19 @@
-# Entropia Cinetica — Versione Minimalista e Fluida
+# Entropia Cinetica — Versione Finale Minimalista
 
-Questa versione non utilizza il tracking dello scheletro.
+Salva questo file come `index.html` e pubblicalo su GitHub Pages.
 
-Rileva semplicemente **le aree dell'immagine che cambiano** quando una persona passa davanti alla webcam e disegna **linee sottili e minimali** con i colori reali del soggetto.
+## Nuove funzionalità implementate
 
-## Caratteristiche
-
-* Nessuna scia se non c'è movimento.
-* Linee leggere e pittoriche.
-* Colori campionati direttamente dalla persona.
-* Prestazioni molto più fluide.
-* Compatibile con computer, tablet e smartphone.
-* Hosting gratuito su GitHub Pages.
+* Rilevamento del solo movimento (motion detection), senza tracking dello scheletro.
+* Disegno di linee minimali e leggere, simili a pennellate.
+* Colori campionati direttamente dagli abiti e dall'incarnato della persona.
+* Nessuna traccia se non viene rilevato movimento.
+* Camera in orizzontale a schermo intero.
+* Densità controllata per evitare accumuli eccessivi.
+* Reset automatico della tela ogni 15 secondi.
+* Salvataggio manuale in PNG.
+* Pulsante di reset manuale.
+* Ottimizzato per funzionare per molte ore consecutive.
 
 ---
 
@@ -20,7 +22,7 @@ Rileva semplicemente **le aree dell'immagine che cambiano** quando una persona p
 <html lang="it">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Entropia Cinetica</title>
 
 <style>
@@ -31,21 +33,22 @@ html, body {
   background: #000;
 }
 
-video {
+video, canvas {
   position: fixed;
   inset: 0;
   width: 100vw;
   height: 100vh;
+}
+
+video {
   object-fit: cover;
   transform: scaleX(-1);
-  opacity: 0.15;
+  opacity: 0.12;
+  pointer-events: none;
 }
 
 canvas {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
+  pointer-events: none;
 }
 
 #ui {
@@ -61,9 +64,10 @@ button {
   background: rgba(0,0,0,0.55);
   color: white;
   border: 1px solid rgba(255,255,255,0.25);
-  padding: 8px 12px;
   border-radius: 8px;
+  padding: 8px 12px;
   cursor: pointer;
+  font-size: 14px;
 }
 </style>
 </head>
@@ -82,13 +86,14 @@ const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
-// Canvas interno a bassa risoluzione per il motion detection
+// Canvas interno a bassa risoluzione per il motion detection.
 const motionCanvas = document.createElement('canvas');
 const motionCtx = motionCanvas.getContext('2d', { willReadFrequently: true });
 motionCanvas.width = 160;
 motionCanvas.height = 90;
 
 let previousFrame = null;
+let lastDrawTime = 0;
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -98,6 +103,7 @@ function resize() {
   canvas.style.height = window.innerHeight + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
+
 window.addEventListener('resize', resize);
 resize();
 
@@ -127,7 +133,8 @@ function resetCanvas() {
 
 function saveImage() {
   const link = document.createElement('a');
-  link.download = 'entropia-cinetica.png';
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  link.download = `entropia-cinetica-${timestamp}.png`;
   link.href = canvas.toDataURL('image/png');
   link.click();
 }
@@ -136,17 +143,17 @@ function drawBrushStroke(x, y, color, intensity) {
   const screenX = (1 - x / motionCanvas.width) * window.innerWidth;
   const screenY = (y / motionCanvas.height) * window.innerHeight;
 
-  const length = 8 + intensity * 0.15;
   const angle = Math.random() * Math.PI * 2;
+  const length = 10 + intensity * 0.08;
 
   const x2 = screenX + Math.cos(angle) * length;
   const y2 = screenY + Math.sin(angle) * length;
 
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.lineWidth = 1 + intensity * 0.02;
-  ctx.globalAlpha = 0.12;
   ctx.lineCap = 'round';
+  ctx.lineWidth = Math.min(3, 1 + intensity * 0.01);
+  ctx.globalAlpha = 0.14;
 
   ctx.beginPath();
   ctx.moveTo(screenX, screenY);
@@ -162,7 +169,15 @@ function processFrame() {
     return;
   }
 
-  // Copia il frame video nel canvas interno
+  // Limita l'analisi a circa 20 FPS per ridurre il carico.
+  const now = performance.now();
+  if (now - lastDrawTime < 50) {
+    requestAnimationFrame(processFrame);
+    return;
+  }
+  lastDrawTime = now;
+
+  // Copia il frame video nel canvas interno specchiato.
   motionCtx.save();
   motionCtx.scale(-1, 1);
   motionCtx.drawImage(video, -motionCanvas.width, 0, motionCanvas.width, motionCanvas.height);
@@ -172,9 +187,13 @@ function processFrame() {
   const data = frame.data;
 
   if (previousFrame) {
-    // Campiona solo alcuni pixel per mantenere alta fluidità
-    for (let y = 0; y < motionCanvas.height; y += 4) {
-      for (let x = 0; x < motionCanvas.width; x += 4) {
+    let strokesDrawn = 0;
+
+    // Analizza pixel campionati per mantenere la fluidità.
+    for (let y = 0; y < motionCanvas.height; y += 6) {
+      for (let x = 0; x < motionCanvas.width; x += 6) {
+        if (strokesDrawn >= 25) break;
+
         const i = (y * motionCanvas.width + x) * 4;
 
         const dr = Math.abs(data[i] - previousFrame[i]);
@@ -183,58 +202,66 @@ function processFrame() {
 
         const diff = dr + dg + db;
 
-        // Disegna solo se c'è movimento significativo
-        if (diff > 70) {
+        // Disegna solo se il cambiamento è significativo.
+        if (diff > 80) {
           const r = data[i];
           const g = data[i + 1];
           const b = data[i + 2];
-          const color = `rgba(${r}, ${g}, ${b}, 0.18)`;
 
+          const color = `rgba(${r}, ${g}, ${b}, 0.18)`;
           drawBrushStroke(x, y, color, diff);
+          strokesDrawn++;
         }
       }
     }
   }
 
   previousFrame = new Uint8ClampedArray(data);
-
   requestAnimationFrame(processFrame);
 }
 
 async function init() {
   await setupCamera();
   processFrame();
+
+  // Reset automatico ogni 15 secondi.
+  setInterval(resetCanvas, 15000);
+
+  // Ricarica preventiva ogni 8 ore per massima stabilità.
+  setTimeout(() => location.reload(), 8 * 60 * 60 * 1000);
 }
 
 init().catch(err => {
-  alert('Errore: ' + err.message);
   console.error(err);
+  alert('Errore di inizializzazione: ' + err.message);
 });
 </script>
+
 </body>
 </html>
 ```
 
 ---
 
-## Come Funziona
+## Pubblicazione su GitHub Pages
 
-L'app confronta ogni fotogramma della webcam con il precedente.
-
-Quando rileva una differenza significativa:
-
-1. individua il punto di movimento;
-2. campiona il colore reale del soggetto;
-3. disegna una breve linea minimale.
-
-Se non c'è movimento, non viene disegnato nulla.
+1. Crea un repository chiamato `entropia-cinetica` su GitHub.
+2. Carica questo `index.html`.
+3. Vai in **Settings → Pages**.
+4. Seleziona il branch `main`.
+5. Apri l'URL generato.
 
 ---
 
-## Effetto Artistico
+## Concept
 
-Il passaggio di una persona non produce un ritratto, ma un insieme di segni sottili e cromatici.
+Ogni gesto lascia un segno.
 
-Una calligrafia del movimento.
+Ogni quindici secondi la memoria si dissolve.
 
-Una memoria visiva del transito umano nello spazio.
+La tela si azzera e torna disponibile ad accogliere nuove presenze.
+
+L'opera non conserva le persone.
+
+Conserva il loro passaggio.
+
