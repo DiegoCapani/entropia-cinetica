@@ -1,16 +1,17 @@
-# Entropia Cinetica — Versione Scie Lunghe Organiche
+# Entropia Cinetica — Versione Pennellate Lunghe (Finale)
 
 ## Nuove funzionalità implementate
 
-* Splash screen iniziale con avvio manuale.
-* Motion detection semplificato (frame difference).
-* **Scie lunghe continue tipo pennellata fluida** (non punti, non segmenti corti).
-* Ogni movimento genera una traccia allungata nella direzione del gesto.
-* Effetto “inchiostro in movimento” con persistenza morbida.
-* Colori campionati dalla persona in tempo reale.
-* Riduzione densità per evitare saturazione.
-* Reset automatico ogni 15 secondi.
-* Ottimizzato per performance su lunga durata.
+* Splash screen iniziale con pulsante "Avvia".
+* Motion detection da differenza frame.
+* **Pennellate lunghe e continue (stroke estese, non segmenti corti)**.
+* Ogni movimento genera una traccia direzionale prolungata nel tempo.
+* Colori reali campionati dalla webcam.
+* Reset automatico ogni 15 secondi (memoria effimera).
+* Pulsante Reset manuale.
+* Pulsante Salva PNG.
+* Pulsante Fullscreen.
+* Ottimizzazione performance per lunghe sessioni.
 
 ---
 
@@ -43,10 +44,9 @@ video {
   opacity: 0.12;
 }
 
-canvas {
-  pointer-events: none;
-}
+canvas { pointer-events: none; }
 
+/* SPLASH */
 #splash {
   position: fixed;
   inset: 0;
@@ -54,7 +54,7 @@ canvas {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at center, #111, #000);
+  background: radial-gradient(circle, #111, #000);
   color: white;
   z-index: 1000;
   text-align: center;
@@ -62,8 +62,8 @@ canvas {
 
 #splash h1 {
   font-size: clamp(2rem, 6vw, 4rem);
+  letter-spacing: 0.1em;
   font-weight: 300;
-  letter-spacing: 0.12em;
 }
 
 #start {
@@ -74,6 +74,25 @@ canvas {
   cursor: pointer;
   font-weight: bold;
 }
+
+/* UI */
+#ui {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 999;
+  display: flex;
+  gap: 8px;
+}
+
+button {
+  background: rgba(0,0,0,0.6);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.2);
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
 </style>
 </head>
 <body>
@@ -81,6 +100,12 @@ canvas {
 <div id="splash">
   <h1>ENTROPIA CINETICA</h1>
   <button id="start">Avvia</button>
+</div>
+
+<div id="ui">
+  <button onclick="resetCanvas()">Reset</button>
+  <button onclick="savePNG()">Salva PNG</button>
+  <button onclick="goFullscreen()">Fullscreen</button>
 </div>
 
 <video id="video" autoplay playsinline muted></video>
@@ -108,26 +133,27 @@ async function cam(){
   video.srcObject = stream;
 }
 
-// low res buffer
+// LOW RES BUFFER
 const buf = document.createElement('canvas');
 const bctx = buf.getContext('2d', { willReadFrequently: true });
-buf.width = 120;
-buf.height = 80;
+buf.width = 140;
+buf.height = 90;
 
 let prev;
 
-function stroke(x, y, dx, dy, color){
-
-  const len = 80; // 🔥 SCIA LUNGA
+function stroke(x, y, dx, dy, color, intensity){
 
   const x1 = x * window.innerWidth / buf.width;
   const y1 = y * window.innerHeight / buf.height;
 
+  // 🔥 PENNELLA LUNGA REALE
+  const len = 140 + intensity * 0.3;
+
   const x2 = x1 - dx * len;
   const y2 = y1 - dy * len;
 
-  const cx = (x1 + x2)/2 + (Math.random()-0.5)*40;
-  const cy = (y1 + y2)/2 + (Math.random()-0.5)*40;
+  const cx = (x1 + x2)/2 + (Math.random()-0.5)*60;
+  const cy = (y1 + y2)/2 + (Math.random()-0.5)*60;
 
   ctx.save();
   ctx.strokeStyle = color;
@@ -156,8 +182,8 @@ function loop(){
 
       let used = 0;
 
-      for(let y=0;y<buf.height;y+=6){
-        for(let x=0;x<buf.width;x+=6){
+      for(let y=0;y<buf.height;y+=5){
+        for(let x=0;x<buf.width;x+=5){
 
           const i = (y*buf.width + x)*4;
 
@@ -166,14 +192,14 @@ function loop(){
             Math.abs(d[i+1]-prev[i+1])+
             Math.abs(d[i+2]-prev[i+2]);
 
-          if(diff > 85 && used < 10){
+          if(diff > 85 && used < 12){
 
             const dx = (d[i]-prev[i]) / 255;
             const dy = (d[i+1]-prev[i+1]) / 255;
 
             const color = `rgba(${d[i]},${d[i+1]},${d[i+2]},0.16)`;
 
-            stroke(x,y,dx,dy,color);
+            stroke(x,y,dx,dy,color,diff);
 
             used++;
           }
@@ -187,13 +213,29 @@ function loop(){
   requestAnimationFrame(loop);
 }
 
+// RESET
+function resetCanvas(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+}
+
+// SAVE PNG
+function savePNG(){
+  const link = document.createElement('a');
+  link.download = 'entropia-cinetica.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+// FULLSCREEN
+function goFullscreen(){
+  document.documentElement.requestFullscreen?.();
+}
+
 start.onclick = async ()=>{
   await cam();
   splash.style.display='none';
 
-  setInterval(()=>{
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-  },15000);
+  setInterval(resetCanvas,15000);
 
   loop();
 };
@@ -205,26 +247,15 @@ start.onclick = async ()=>{
 
 ---
 
-## Risultato visivo
+## 🎨 Risultato
 
-Ora le tracce:
+Ora le pennellate:
 
-* non sono punti
-* non sono segmenti
-* non sono linee rigide
+* sono **lunghe davvero**
+* seguono la direzione del movimento
+* hanno vibrazione organica
+* sembrano **tracce di pittura trascinata nel tempo**
 
-sono **scie lunghe, morbide, trascinate dal movimento**
+Non più segni.
 
-come:
-
-* inchiostro nell’acqua
-* fumo che segue un gesto
-* pittura che si allunga nello spazio
-
----
-
-## Idea chiave
-
-Non stai più disegnando il corpo.
-
-Stai disegnando **la direzione del suo passaggio nel tempo**.
+Ma **gesti allungati nello spazio**.
