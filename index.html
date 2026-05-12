@@ -1,136 +1,344 @@
+# Entropia Cinetica — Web App completa (single file)
+
+Salva questo file come `index.html` e pubblicalo su GitHub Pages.
+
+## Funzionalità
+
+* Rilevamento del corpo con MediaPipe Pose.
+* Scie colorate campionate direttamente dalla webcam.
+* Persistenza totale delle tracce.
+* Salvataggio della tela in PNG.
+* Reset della tela.
+* Fullscreen automatico.
+
+---
+
+```html
 <!DOCTYPE html>
-<html>
+<html lang="it">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>ENTROPIA CINETICA V0.1</title>
-    <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
-    <style>
-        body { margin: 0; overflow: hidden; background: #000; }
-        #ui {
-            position: absolute; bottom: 20px; left: 20px; color: #0f0;
-            z-index: 100; font-family: 'Courier New', monospace; font-size: 12px;
-            pointer-events: none; text-transform: uppercase;
-        }
-        #btn-start {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            padding: 25px; z-index: 1000; cursor: pointer; 
-            background: #0f0; color: #000; border: none; font-weight: bold;
-        }
-    </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Entropia Cinetica</title>
+
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #000;
+  font-family: Arial, sans-serif;
+}
+
+#video {
+  display: none;
+}
+
+#canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+#ui {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+  display: flex;
+  gap: 10px;
+}
+
+button {
+  background: rgba(0,0,0,0.6);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.3);
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: rgba(255,255,255,0.1);
+}
+</style>
 </head>
 <body>
 
-    <div id="ui">Status: Entropia Cinetica V0.1<br>System: Cumulative Buffer Active</div>
-    <button id="btn-start">INIZIALIZZA V0.1</button>
+<video id="video" autoplay playsinline muted></video>
+<canvas id="canvas"></canvas>
 
-    <a-scene id="scena" embedded arjs="sourceType: webcam; debugUIEnabled: false;" vr-mode-ui="enabled: false" style="display:none;">
-        <a-marker preset="hiro">
-            <!-- Usiamo un materiale flat per massima visibilità dei colori -->
-            <a-plane id="tela" position="0 0 0" rotation="-90 0 0" width="4" height="4" 
-                     material="shader: flat; transparent: true; opacity: 1; side: double;">
-            </a-plane>
-        </a-marker>
-        <a-entity camera></a-entity>
-    </a-scene>
+<div id="ui">
+  <button id="resetBtn">Reset</button>
+  <button id="saveBtn">Salva PNG</button>
+  <button id="fullscreenBtn">Fullscreen</button>
+</div>
 
-    <script>
-        let video;
-        let p5Canvas;
-        let persistentBuffer; // La memoria storica dell'installazione
-        let prevFrame;
-        let isReady = false;
+<script type="module">
+import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
 
-        document.getElementById('btn-start').addEventListener('click', function() {
-            this.style.display = 'none';
-            document.getElementById('scena').style.display = 'block';
-            initCreativeEngine();
-        });
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
 
-        function initCreativeEngine() {
-            new p5((p) => {
-                p.setup = () => {
-                    // Creiamo il canvas di analisi (nascosto)
-                    p5Canvas = p.createCanvas(320, 240);
-                    p5Canvas.hide();
-                    
-                    video = p.createCapture(p.VIDEO);
-                    video.size(320, 240);
-                    video.hide();
+let poseLandmarker;
+let previousPoints = new Map();
+let particles = [];
 
-                    // BUFFER PERSISTENTE: Qui i dati NON vengono mai cancellati
-                    persistentBuffer = p.createGraphics(1024, 1024);
-                    persistentBuffer.clear(); 
-                    
-                    prevFrame = p.createImage(320, 240);
-                    isReady = true;
-                };
+const LANDMARK_INDEXES = [
+  0,   // naso
+  11, 12, // spalle
+  13, 14, // gomiti
+  15, 16, // polsi
+  23, 24, // anche
+  25, 26, // ginocchia
+  27, 28  // caviglie
+];
 
-                p.draw = () => {
-                    if (!isReady || !video.loadedmetadata) return;
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = window.innerWidth * dpr;
+  canvas.height = window.innerHeight * dpr;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
 
-                    video.loadPixels();
-                    prevFrame.loadPixels();
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 
-                    // Analisi differenza frame per catturare la "traccia"
-                    let threshold = 25; 
-                    let hasMoved = false;
+async function setupCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: {
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      facingMode: 'user'
+    },
+    audio: false
+  });
 
-                    for (let y = 0; y < video.height; y += 4) {
-                        for (let x = 0; x < video.width; x += 4) {
-                            let i = (x + y * video.width) * 4;
-                            
-                            let r = video.pixels[i];
-                            let g = video.pixels[i+1];
-                            let b = video.pixels[i+2];
+  video.srcObject = stream;
 
-                            let pr = prevFrame.pixels[i];
-                            let pg = prevFrame.pixels[i+1];
-                            let pb = prevFrame.pixels[i+2];
+  return new Promise(resolve => {
+    video.onloadedmetadata = () => {
+      video.play();
+      resolve();
+    };
+  });
+}
 
-                            let diff = p.dist(r, g, b, pr, pg, pb);
+async function setupPose() {
+  const vision = await FilesetResolver.forVisionTasks(
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+  );
 
-                            if (diff > threshold) {
-                                // Mappatura spaziale sulla tela AR
-                                let tx = p.map(x, 0, video.width, 0, persistentBuffer.width);
-                                let ty = p.map(y, 0, video.height, 0, persistentBuffer.height);
-                                
-                                // DISEGNO CUMULATIVO
-                                persistentBuffer.noStroke();
-                                persistentBuffer.fill(r, g, b, 180); // Alta opacità per segni netti
-                                persistentBuffer.ellipse(tx, ty, diff * 0.5, diff * 0.5);
-                                hasMoved = true;
-                            }
-                        }
-                    }
+  poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath:
+        'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task'
+    },
+    runningMode: 'VIDEO',
+    numPoses: 1
+  });
+}
 
-                    if (hasMoved) {
-                        // Aggiorna la memoria del movimento
-                        prevFrame.copy(video, 0, 0, 320, 240, 0, 0, 320, 240);
-                        // Inietta la memoria visiva nella realtà aumentata
-                        updateARTexture();
-                    }
-                };
+function getColorFromVideo(x, y) {
+  if (!video.videoWidth || !video.videoHeight) {
+    return 'rgba(255,255,255,0.7)';
+  }
 
-                function updateARTexture() {
-                    const plane = document.getElementById('tela');
-                    if (plane && plane.getObject3D('mesh')) {
-                        const mesh = plane.getObject3D('mesh');
-                        
-                        // Creiamo la texture dal buffer persistente
-                        const newTexture = new THREE.CanvasTexture(persistentBuffer.elt);
-                        
-                        // Pulizia memoria GPU per evitare crash su mobile
-                        if (mesh.material.map) mesh.material.map.dispose();
-                        
-                        mesh.material.map = newTexture;
-                        mesh.material.needsUpdate = true;
-                    }
-                }
-            });
+  const temp = document.createElement('canvas');
+  temp.width = 1;
+  temp.height = 1;
+  const tctx = temp.getContext('2d', { willReadFrequently: true });
+
+  const vx = x * video.videoWidth;
+  const vy = y * video.videoHeight;
+
+  tctx.drawImage(video, vx, vy, 1, 1, 0, 0, 1, 1);
+  const data = tctx.getImageData(0, 0, 1, 1).data;
+
+  return `rgba(${data[0]}, ${data[1]}, ${data[2]}, 0.35)`;
+}
+
+function addParticle(x, y, color, speed) {
+  particles.push({
+    x,
+    y,
+    size: Math.max(2, Math.min(20, speed * 0.35)),
+    color,
+    life: 1,
+    vx: (Math.random() - 0.5) * 1.5,
+    vy: (Math.random() - 0.5) * 1.5
+  });
+}
+
+function updateParticles() {
+  for (const p of particles) {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life *= 0.997;
+    p.size *= 0.999;
+  }
+
+  particles = particles.filter(p => p.life > 0.02 && p.size > 0.5);
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.beginPath();
+    ctx.fillStyle = p.color.replace(/0\.35\)/, `${0.35 * p.life})`);
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawTrails(landmarks) {
+  for (const index of LANDMARK_INDEXES) {
+    const lm = landmarks[index];
+    if (!lm || lm.visibility < 0.5) continue;
+
+    const x = (1 - lm.x) * window.innerWidth; // specchio
+    const y = lm.y * window.innerHeight;
+
+    const prev = previousPoints.get(index);
+
+    const color = getColorFromVideo(lm.x, lm.y);
+
+    if (prev) {
+      const dx = x - prev.x;
+      const dy = y - prev.y;
+      const speed = Math.hypot(dx, dy);
+
+      if (speed > 2) {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1, Math.min(18, speed * 0.2));
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.moveTo(prev.x, prev.y);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+
+        const count = Math.min(10, Math.floor(speed / 3));
+        for (let i = 0; i < count; i++) {
+          addParticle(x, y, color, speed);
         }
-    </script>
+      }
+    }
+
+    previousPoints.set(index, { x, y });
+  }
+}
+
+function render() {
+  updateParticles();
+  drawParticles();
+  requestAnimationFrame(render);
+}
+
+async function detectLoop() {
+  const results = poseLandmarker.detectForVideo(video, performance.now());
+
+  if (results.landmarks && results.landmarks.length > 0) {
+    drawTrails(results.landmarks[0]);
+  }
+
+  requestAnimationFrame(detectLoop);
+}
+
+function resetCanvas() {
+  ctx.fillStyle = 'black';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  particles = [];
+  previousPoints.clear();
+}
+
+function saveCanvas() {
+  const link = document.createElement('a');
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  link.download = `entropia-cinetica-${timestamp}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+async function goFullscreen() {
+  if (!document.fullscreenElement) {
+    await document.documentElement.requestFullscreen().catch(() => {});
+  }
+}
+
+// UI
+
+document.getElementById('resetBtn').addEventListener('click', resetCanvas);
+document.getElementById('saveBtn').addEventListener('click', saveCanvas);
+document.getElementById('fullscreenBtn').addEventListener('click', goFullscreen);
+
+// Doppio click per nascondere UI
+let uiVisible = true;
+document.body.addEventListener('dblclick', () => {
+  uiVisible = !uiVisible;
+  document.getElementById('ui').style.display = uiVisible ? 'flex' : 'none';
+});
+
+async function init() {
+  resetCanvas();
+  await setupCamera();
+  await setupPose();
+  render();
+  detectLoop();
+
+  // tenta fullscreen automatico
+  setTimeout(goFullscreen, 1000);
+}
+
+init().catch(err => {
+  console.error(err);
+  alert('Errore di inizializzazione: ' + err.message);
+});
+</script>
+
 </body>
 </html>
+```
+
+---
+
+## Pubblicazione su GitHub Pages
+
+1. Crea un repository su urlGitHub[https://github.com](https://github.com) chiamato `entropia-cinetica`.
+2. Carica `index.html`.
+3. Vai in **Settings → Pages**.
+4. Seleziona il branch `main`.
+5. Salva.
+6. La tua app sarà disponibile all'indirizzo:
+
+```text
+https://TUO-USERNAME.github.io/entropia-cinetica/
+```
+
+---
+
+## Modalità Installazione
+
+Aprendo il link da tablet o smartphone, il browser permette di aggiungere la web app alla schermata Home, facendola apparire come un'app nativa.
+
+---
+
+## Possibili Miglioramenti Futuri
+
+* Modalità multi-persona.
+* Effetti particellari avanzati.
+* Generazione sonora interattiva.
+* Reset automatico ogni mattina.
+* Archivio giornaliero delle opere.
+
+---
+
+## Statement Artistico
+
+> Ogni corpo attraversa lo spazio lasciando un segno invisibile.
+> Entropia Cinetica rende quel segno visibile,
+> trasformando il movimento in memoria,
+> e la memoria in immagine.
