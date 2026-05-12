@@ -14,17 +14,7 @@ html, body {
   font-family: Arial, sans-serif;
 }
 
-#video {
-  display: none;
-}
-
-#canvas {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-}
-
+/* CAMERA */
 #videoView {
   position: fixed;
   inset: 0;
@@ -32,11 +22,25 @@ html, body {
   height: 100vh;
   object-fit: cover;
   transform: scaleX(-1);
-  opacity: 0.18;
-  filter: contrast(1.05) saturate(1.1);
-  pointer-events: none;
+  opacity: 0.25;
+  filter: contrast(1.1) saturate(1.2);
+  z-index: 1;
 }
 
+/* CANVAS SCIE */
+#canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 2;
+}
+
+#video {
+  display: none;
+}
+
+/* UI */
 #ui {
   position: fixed;
   top: 10px;
@@ -59,7 +63,7 @@ button:hover {
   background: rgba(255,255,255,0.1);
 }
 
-/* SPLASH SCREEN */
+/* SPLASH */
 #splash {
   position: fixed;
   inset: 0;
@@ -101,7 +105,7 @@ button:hover {
 <!-- SPLASH -->
 <div id="splash">
   <h1>ENTROPIA CINETICA</h1>
-  <p>web app v1.2</p>
+  <p>web app v1.0</p>
   <button id="startApp">Avvia web app</button>
 </div>
 
@@ -119,6 +123,7 @@ button:hover {
 import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
 
 const video = document.getElementById('video');
+const videoView = document.getElementById('videoView');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
@@ -139,8 +144,11 @@ function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = window.innerWidth * dpr;
   canvas.height = window.innerHeight * dpr;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
+
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
@@ -151,6 +159,7 @@ async function setupCamera() {
   });
 
   video.srcObject = stream;
+  videoView.srcObject = stream;
 
   return new Promise(resolve => {
     video.onloadedmetadata = () => {
@@ -175,70 +184,34 @@ async function setupPose() {
   });
 }
 
-/* 🎨 COLORI POTENZIATI (PIÙ VIVI + CONTRASTATI) */
+/* CAMPO COLORE (migliorabile ma stabile) */
 const sampleCanvas = document.createElement('canvas');
 const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
-
-sampleCanvas.width = 80;
-sampleCanvas.height = 80;
+sampleCanvas.width = 160;
+sampleCanvas.height = 90;
 
 function getColorFromVideo(x, y) {
   if (!video.videoWidth || !video.videoHeight) {
     return 'rgba(255,255,255,0.25)';
   }
 
-  const cx = (1 - x) * video.videoWidth;
-  const cy = y * video.videoHeight;
+  const sx = Math.floor((1 - x) * sampleCanvas.width);
+  const sy = Math.floor(y * sampleCanvas.height);
 
-  const size = 12;
+  const px = Math.max(0, Math.min(sampleCanvas.width - 1, sx));
+  const py = Math.max(0, Math.min(sampleCanvas.height - 1, sy));
 
-  sampleCtx.drawImage(
-    video,
-    cx - size / 2,
-    cy - size / 2,
-    size,
-    size,
-    0,
-    0,
-    size,
-    size
-  );
+  const data = sampleCtx.getImageData(px, py, 1, 1).data;
 
-  const data = sampleCtx.getImageData(0, 0, size, size).data;
+  // 🔥 BOOST VIVACITÀ COLORI
+  const r = Math.min(255, data[0] * 1.25);
+  const g = Math.min(255, data[1] * 1.25);
+  const b = Math.min(255, data[2] * 1.25);
 
-  let r = 0, g = 0, b = 0;
-  let count = 0;
-
-  for (let i = 0; i < data.length; i += 4) {
-    r += data[i];
-    g += data[i + 1];
-    b += data[i + 2];
-    count++;
-  }
-
-  r /= count;
-  g /= count;
-  b /= count;
-
-  // 🔥 BOOST saturazione
-  r *= 1.18;
-  g *= 1.12;
-  b *= 1.22;
-
-  // 🎯 contrasto locale (più separazione cromatica)
-  const avg = (r + g + b) / 3;
-  r += (r - avg) * 0.30;
-  g += (g - avg) * 0.30;
-  b += (b - avg) * 0.30;
-
-  // clamp
-  r = Math.max(0, Math.min(255, r));
-  g = Math.max(0, Math.min(255, g));
-  b = Math.max(0, Math.min(255, b));
-
-  return `rgba(${r|0}, ${g|0}, ${b|0}, 0.28)`;
+  return `rgba(${r}, ${g}, ${b}, 0.22)`;
 }
 
+/* SCIE */
 function drawTrails(landmarks) {
   const now = performance.now();
 
@@ -281,6 +254,7 @@ function drawTrails(landmarks) {
 
       const cx = (prev.x + x) / 2 + (Math.random() - 0.5) * 8;
       const cy = (prev.y + y) / 2 + (Math.random() - 0.5) * 8;
+
       ctx.quadraticCurveTo(cx, cy, x, y);
       ctx.stroke();
 
@@ -291,6 +265,15 @@ function drawTrails(landmarks) {
   }
 }
 
+/* RENDER VIDEO (FIX CAMERA VISIBILE) */
+function drawVideo() {
+  if (video.readyState >= 2) {
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  }
+  requestAnimationFrame(drawVideo);
+}
+
+/* LOOP POSE */
 function render() {
   if (video.readyState >= 2) {
     sampleCtx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
@@ -308,19 +291,33 @@ async function detectLoop() {
   requestAnimationFrame(detectLoop);
 }
 
+/* RESET */
 function resetCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   previousPoints.clear();
 }
 
+/* SAVE PNG SU NERO */
 function saveCanvas() {
+  const exportCanvas = document.createElement('canvas');
+  const exportCtx = exportCanvas.getContext('2d');
+
+  exportCanvas.width = canvas.width;
+  exportCanvas.height = canvas.height;
+
+  exportCtx.fillStyle = "#000";
+  exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+
+  exportCtx.drawImage(canvas, 0, 0);
+
   const link = document.createElement('a');
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   link.download = `entropia-cinetica-${timestamp}.png`;
-  link.href = canvas.toDataURL('image/png');
+  link.href = exportCanvas.toDataURL('image/png');
   link.click();
 }
 
+/* FULLSCREEN */
 async function goFullscreen() {
   if (!document.fullscreenElement) {
     await document.documentElement.requestFullscreen().catch(() => {});
@@ -340,6 +337,7 @@ document.getElementById('startApp').addEventListener('click', async () => {
   await setupCamera();
   await setupPose();
 
+  drawVideo();
   render();
   detectLoop();
 
