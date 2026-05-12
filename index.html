@@ -63,13 +63,14 @@ button:hover {
 #splash {
   position: fixed;
   inset: 0;
-  background: #000;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   z-index: 9999;
   color: white;
+  background: #000;
+  text-align: center;
 }
 
 #splash h1 {
@@ -293,7 +294,7 @@ document.getElementById('resetBtn').addEventListener('click', resetCanvas);
 document.getElementById('saveBtn').addEventListener('click', saveCanvas);
 document.getElementById('fullscreenBtn').addEventListener('click', goFullscreen);
 
-// AVVIO DA SPLASH
+// SPLASH START
 document.getElementById('startApp').addEventListener('click', async () => {
   document.getElementById('splash').style.display = 'none';
 
@@ -304,10 +305,8 @@ document.getElementById('startApp').addEventListener('click', async () => {
   render();
   detectLoop();
 
-  // RESET AUTOMATICO OGNI 60 SECONDI
-  setInterval(resetCanvas, 160000);
-
-  setTimeout(goFullscreen, 1000);
+  // RESET OGNI 3 MINUTI
+  setInterval(resetCanvas, 180000);
 });
 </script>
 
