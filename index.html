@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Entropia Cinetica v1.6.7 | Centered Immersive</title>
+<title>Entropia Cinetica v1.6.8 | Auto-Archive Mode</title>
 
 <style>
 html, body {
@@ -70,7 +70,7 @@ button:hover {
 
 <div id="splash">
   <h1 style="letter-spacing: 20px; font-weight: 100; margin-bottom: 5px;">ENTROPIA CINETICA</h1>
-  <p style="opacity: 0.3; font-size: 10px; letter-spacing: 2px;">WEB-AR INSTALLATION • V1.6.7</p>
+  <p style="opacity: 0.3; font-size: 10px; letter-spacing: 2px;">WEB-AR INSTALLATION • V1.6.8 • AUTO-EXPORT ON</p>
   <button id="startApp">INITIALIZE</button>
 </div>
 
@@ -184,11 +184,28 @@ function detect() {
   requestAnimationFrame(detect);
 }
 
+// FUNZIONE EXPORT (Unificata per manuale e automatico)
+function exportCanvas(isAuto = false) {
+  const out = document.createElement('canvas');
+  out.width = canvas.width; out.height = canvas.height;
+  const octx = out.getContext('2d');
+  octx.fillStyle = '#000'; octx.fillRect(0,0,out.width,out.height);
+  octx.drawImage(canvas, 0,0);
+  
+  const now = new Date();
+  const timestamp = now.getHours().toString().padStart(2, '0') + 
+                    now.getMinutes().toString().padStart(2, '0') + 
+                    now.getSeconds().toString().padStart(2, '0');
+  
+  const link = document.createElement('a');
+  link.download = isAuto ? `auto_entropia_${timestamp}.png` : `manual_entropia_${timestamp}.png`;
+  link.href = out.toDataURL();
+  link.click();
+}
+
 document.getElementById('fullBtn').onclick = () => {
   if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(err => {
-      console.log(`Errore fullscreen: ${err.message}`);
-    });
+    document.documentElement.requestFullscreen();
     document.getElementById('fullBtn').innerText = "Exit Full";
   } else {
     document.exitFullscreen();
@@ -201,22 +218,18 @@ document.getElementById('resetBtn').onclick = () => {
     previousPoints.clear();
 };
 
-document.getElementById('saveBtn').onclick = () => {
-  const out = document.createElement('canvas');
-  out.width = canvas.width; out.height = canvas.height;
-  const octx = out.getContext('2d');
-  octx.fillStyle = '#000'; octx.fillRect(0,0,out.width,out.height);
-  octx.drawImage(canvas, 0,0);
-  const link = document.createElement('a');
-  link.download = 'spatial-centered-v1-6-7.png';
-  link.href = out.toDataURL(); link.click();
-};
+document.getElementById('saveBtn').onclick = () => exportCanvas(false);
 
 document.getElementById('startApp').onclick = async () => {
   document.getElementById('splash').style.display = 'none';
   await setupCamera();
   await setupPose();
   detect();
+  
+  // AVVIO AUTO-EXPORT OGNI 20 SECONDI
+  setInterval(() => {
+    exportCanvas(true);
+  }, 20000); 
 };
 </script>
 </body>
