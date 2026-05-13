@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Entropia Cinetica v1.6.1</title>
+<title>Entropia Cinetica v1.6.2</title>
 
 <style>
 html, body {
@@ -16,7 +16,7 @@ html, body {
   object-fit: cover; transform: scaleX(-1);
 }
 #video { display: none; }
-#videoView { opacity: 0.12; filter: grayscale(1) brightness(0.6); z-index: 1; pointer-events: none; }
+#videoView { opacity: 0.1; filter: grayscale(1) contrast(1.2); z-index: 1; pointer-events: none; }
 
 #canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 2; background: transparent; }
 
@@ -42,8 +42,8 @@ button:hover { background: #fff; color: #000; }
 
 <div id="splash">
   <h1 style="letter-spacing: 7px; font-weight: 200;">ENTROPIA CINETICA</h1>
-  <p style="opacity: 0.5;">STUDIO SUL MOVIMENTO V1.6.1</p>
-  <button id="startApp">INIZIA SCAN</button>
+  <p style="opacity: 0.4;">V1.6.2 • BI-CHROMATIC DEPTH</p>
+  <button id="startApp">ATTIVA INSTALLAZIONE</button>
 </div>
 
 <video id="video" autoplay playsinline muted></video>
@@ -64,6 +64,7 @@ const ctx = canvas.getContext('2d');
 
 let poseLandmarker;
 let previousPoints = new Map();
+let dominantColors = [{r:255,g:255,b:255}, {r:100,g:100,b:100}];
 
 const LANDMARK_INDEXES = [0, 11, 12, 13, 14, 15, 16, 23, 24];
 
@@ -97,52 +98,57 @@ const sampleCanvas = document.createElement('canvas');
 const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
 sampleCanvas.width = 160; sampleCanvas.height = 90;
 
-function getColor(x, y) {
-  if (!video.videoWidth) return { r:255, g:255, b:255 };
-  const sx = Math.floor((1 - x) * sampleCanvas.width);
-  const sy = Math.floor(y * sampleCanvas.height);
-  const d = sampleCtx.getImageData(sx, sy, 1, 1).data;
-  return { r: d[0], g: d[1], b: d[2] };
+// Ottimizzazione Hardware: Aggiorna i 2 colori dominanti ogni 60 frame
+function updateDominantColors() {
+  if (!video.videoWidth) return;
+  sampleCtx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
+  const data = sampleCtx.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data;
+  
+  let bright = {r:0, g:0, b:0, lum:0};
+  let dark = {r:255, g:255, b:255, lum:255};
+
+  for (let i = 0; i < data.length; i += 400) { // Salto campioni per velocità
+    const r = data[i], g = data[i+1], b = data[i+2];
+    const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+    if (lum > bright.lum) bright = {r, g, b, lum};
+    if (lum < dark.lum) dark = {r, g, b, lum};
+  }
+  dominantColors = [bright, dark];
 }
 
-/* --- IL PENNELLO CONTINUO DINAMICO V1.6.1 --- */
-function drawContinuousLiquidStroke(prev, curr, color, zDepth) {
+function drawContinuousLiquidStroke(prev, curr, colorIndex, zDepth) {
   ctx.save();
   
-  // 1. Spessore calibrato sulla distanza (Z)
-  // Ridotto il moltiplicatore da 15 a 7.5 per dimezzare lo spessore massimo
-  // Offset minimo ridotto a 1 per un tratto più sottile in lontananza
-  const baseWeight = Math.max(0.5, (zDepth * -7.5) + 1.2); 
+  // 1. Spessore Ultra-Fine (Ridotto ulteriormente del 50%)
+  // Range: ~0.3px (lontano) a ~4px (vicinissimo)
+  const baseWeight = Math.max(0.2, (zDepth * -3.75) + 0.6); 
   
   const midX = (prev.x + curr.x) / 2;
   const midY = (prev.y + curr.y) / 2;
+  const color = dominantColors[colorIndex];
 
   ctx.beginPath();
   ctx.moveTo(prev.x, prev.y);
   ctx.quadraticCurveTo(midX, midY, curr.x, curr.y);
   
-  // Stile calligrafico fluido
-  ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.55)`;
+  ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.5)`;
   ctx.lineWidth = baseWeight;
   ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  
-  // Shadow sottile per eliminare scalettature e dare morbidezza
-  ctx.shadowBlur = 1.5;
-  ctx.shadowColor = `rgba(${color.r}, ${color.g}, ${color.b}, 0.2)`;
-  
   ctx.stroke();
   ctx.restore();
 }
 
+let frameCount = 0;
 function detect() {
   if (video.readyState >= 2) {
-    sampleCtx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
+    if (frameCount % 60 === 0) updateDominantColors();
+    frameCount++;
+
     const results = poseLandmarker.detectForVideo(video, performance.now());
     
     if (results.landmarks?.length) {
       const landmarks = results.landmarks[0];
-      LANDMARK_INDEXES.forEach(index => {
+      LANDMARK_INDEXES.forEach((index, i) => {
         const lm = landmarks[index];
         if (!lm || lm.visibility < 0.7) return;
 
@@ -151,10 +157,12 @@ function detect() {
         const prev = previousPoints.get(index);
 
         if (prev) {
-          const speed = Math.hypot(x - prev.x, y - prev.y);
-          if (speed > 2.5) { 
-            const color = getColor(lm.x, lm.y);
-            drawContinuousLiquidStroke(prev, {x, y}, color, lm.z);
+          const dist = Math.hypot(x - prev.x, y - prev.y);
+          // 2. Soglia di movimento migliorata: nessuna scia se non c'è spostamento reale
+          if (dist > 3.5) { 
+            // Alterna i due colori dominanti tra i diversi arti per contrasto
+            const colorIdx = i % 2;
+            drawContinuousLiquidStroke(prev, {x, y}, colorIdx, lm.z);
           }
         }
         previousPoints.set(index, {x, y});
@@ -172,7 +180,7 @@ document.getElementById('saveBtn').onclick = () => {
   octx.fillStyle = '#000'; octx.fillRect(0,0,out.width,out.height);
   octx.drawImage(canvas, 0,0);
   const link = document.createElement('a');
-  link.download = 'entropia-v1-6-1.png';
+  link.download = 'entropia-v1-6-2.png';
   link.href = out.toDataURL(); link.click();
 };
 
