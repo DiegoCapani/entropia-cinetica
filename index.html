@@ -1,122 +1,49 @@
-# Entropia Cinetica v1.4.2
-
-Versione aggiornata basata sulla tua v1.3.
-
-## Obiettivo di questa versione
-
-* Scie continue e fluide
-* Colori reali campionati dalla webcam
-* Nessun effetto "costellazione"
-* Nessun nodo luminoso o glow eccessivo
-* Spessori variabili per dare profondità
-* Salvataggio PNG con sfondo nero
-* Reset automatico ogni 3 minuti
-
-```html
 <!DOCTYPE html>
 <html lang="it">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Entropia Cinetica v1.4.2</title>
+<title>Entropia Cinetica v1.5.0</title>
 
 <style>
 html, body {
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  background: #000;
-  font-family: Arial, sans-serif;
+  margin: 0; padding: 0; overflow: hidden;
+  background: #000; font-family: 'Courier New', Courier, monospace;
 }
 
-#video {
-  display: none;
+#video, #videoView {
+  position: fixed; inset: 0; width: 100vw; height: 100vh;
+  object-fit: cover; transform: scaleX(-1);
 }
+#video { display: none; }
+#videoView { opacity: 0.12; filter: grayscale(1) contrast(1.2); z-index: 1; pointer-events: none; }
 
-#videoView {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-  object-fit: cover;
-  transform: scaleX(-1);
-  opacity: 0.18;
-  filter: contrast(1.1) saturate(1.2);
-  pointer-events: none;
-  z-index: 1;
-}
+#canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 2; background: transparent; }
 
-#canvas {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-  background: transparent;
-  z-index: 2;
-}
-
-#ui {
-  position: fixed;
-  top: 10px;
-  left: 10px;
-  z-index: 10;
-  display: flex;
-  gap: 10px;
-}
-
+#ui { position: fixed; top: 15px; left: 15px; z-index: 10; display: flex; gap: 10px; }
 button {
-  background: rgba(0,0,0,0.6);
-  color: white;
-  border: 1px solid rgba(255,255,255,0.3);
-  padding: 8px 12px;
-  border-radius: 8px;
-  cursor: pointer;
+  background: rgba(0,0,0,0.7); color: #fff; border: 1px solid rgba(255,255,255,0.2);
+  padding: 10px 15px; border-radius: 4px; cursor: pointer; font-size: 12px; letter-spacing: 1px;
 }
-
-button:hover {
-  background: rgba(255,255,255,0.1);
-}
+button:hover { background: #fff; color: #000; }
 
 #splash {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  background: #000;
-  color: white;
-  text-align: center;
+  position: fixed; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; z-index: 9999;
+  background: #000; color: white; text-align: center;
 }
-
-#splash h1 {
-  margin: 0;
-  font-size: 42px;
-  letter-spacing: 2px;
-}
-
-#splash p {
-  margin-top: 10px;
-  opacity: 0.7;
-}
-
 #startApp {
-  margin-top: 25px;
-  padding: 10px 16px;
-  border-radius: 8px;
-  border: 1px solid white;
-  background: transparent;
-  color: white;
+  margin-top: 30px; padding: 12px 24px; border: 1px solid white;
+  background: transparent; color: white; cursor: pointer;
 }
 </style>
 </head>
 <body>
 
 <div id="splash">
-  <h1>ENTROPIA CINETICA</h1>
-  <p>web app v1.4.2</p>
-  <button id="startApp">Avvia web app</button>
+  <h1 style="letter-spacing: 5px;">ENTROPIA CINETICA</h1>
+  <p style="opacity: 0.5;">STUDIO SUL MOVIMENTO V1.5.0</p>
+  <button id="startApp">INIZIA SCAN</button>
 </div>
 
 <video id="video" autoplay playsinline muted></video>
@@ -124,297 +51,156 @@ button:hover {
 <canvas id="canvas"></canvas>
 
 <div id="ui">
-  <button id="resetBtn">Reset</button>
-  <button id="saveBtn">Salva PNG</button>
-  <button id="fullscreenBtn">Fullscreen</button>
+  <button id="resetBtn">RESET</button>
+  <button id="saveBtn">EXPORT PNG</button>
 </div>
 
 <script type="module">
 import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
 
 const video = document.getElementById('video');
-const videoView = document.getElementById('videoView');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
 let poseLandmarker;
 let previousPoints = new Map();
 let lastStrokeTime = new Map();
-let particles = []; // mantenuto per compatibilità con resetCanvas
 
-const LANDMARK_INDEXES = [
-  0,
-  11, 12,
-  13, 14,
-  15, 16,
-  23, 24,
-  25, 26,
-  27, 28
-];
+const LANDMARK_INDEXES = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26];
 
-function resizeCanvas() {
+function resize() {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = window.innerWidth * dpr;
   canvas.height = window.innerHeight * dpr;
-  canvas.style.width = window.innerWidth + 'px';
-  canvas.style.height = window.innerHeight + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-
-window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
+window.addEventListener('resize', resize);
+resize();
 
 async function setupCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      facingMode: 'user',
-      width: { ideal: 1280 },
-      height: { ideal: 720 }
-    },
-    audio: false
+    video: { facingMode: 'user', width: 1280, height: 720 }, audio: false
   });
-
   video.srcObject = stream;
-  videoView.srcObject = stream;
-
-  return new Promise(resolve => {
-    video.onloadedmetadata = async () => {
-      await video.play();
-      resolve();
-    };
-  });
+  document.getElementById('videoView').srcObject = stream;
+  return new Promise(r => video.onloadedmetadata = () => { video.play(); r(); });
 }
 
 async function setupPose() {
-  const vision = await FilesetResolver.forVisionTasks(
-    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
-  );
-
+  const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
   poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-    baseOptions: {
-      modelAssetPath:
-        'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task'
-    },
-    runningMode: 'VIDEO',
-    numPoses: 1
+    baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task' },
+    runningMode: 'VIDEO', numPoses: 1
   });
 }
 
 const sampleCanvas = document.createElement('canvas');
 const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
-sampleCanvas.width = 200;
-sampleCanvas.height = 112;
+sampleCanvas.width = 160; sampleCanvas.height = 90;
 
-function clamp(v) {
-  return Math.max(0, Math.min(255, v));
-}
-
-function getColorFromVideo(x, y) {
-  if (!video.videoWidth || !video.videoHeight) {
-    return 'rgba(255,255,255,0.35)';
-  }
-
+function getColor(x, y) {
+  if (!video.videoWidth) return { r:255, g:255, b:255 };
+  // Campionamento specchiato per coincidere con la vista utente
   const sx = Math.floor((1 - x) * sampleCanvas.width);
   const sy = Math.floor(y * sampleCanvas.height);
-  const radius = 4;
-
-  let totalR = 0, totalG = 0, totalB = 0, count = 0;
-
-  for (let yy = -radius; yy <= radius; yy++) {
-    for (let xx = -radius; xx <= radius; xx++) {
-      const px = Math.max(0, Math.min(sampleCanvas.width - 1, sx + xx));
-      const py = Math.max(0, Math.min(sampleCanvas.height - 1, sy + yy));
-      const data = sampleCtx.getImageData(px, py, 1, 1).data;
-      totalR += data[0];
-      totalG += data[1];
-      totalB += data[2];
-      count++;
-    }
-  }
-
-  let r = totalR / count;
-  let g = totalG / count;
-  let b = totalB / count;
-
-  const avg = (r + g + b) / 3;
-  r = avg + (r - avg) * 1.8;
-  g = avg + (g - avg) * 1.8;
-  b = avg + (b - avg) * 1.8;
-
-  r *= 1.35;
-  g *= 1.35;
-  b *= 1.35;
-
-  r = (r - 128) * 1.15 + 128;
-  g = (g - 128) * 1.15 + 128;
-  b = (b - 128) * 1.15 + 128;
-
-  r = Math.max(0, Math.min(255, Math.round(r)));
-  g = Math.max(0, Math.min(255, Math.round(g)));
-  b = Math.max(0, Math.min(255, Math.round(b)));
-
-  return `rgba(${r}, ${g}, ${b}, 0.42)`;
+  const d = sampleCtx.getImageData(sx, sy, 1, 1).data;
+  return { r: d[0], g: d[1], b: d[2] };
 }
 
-function drawTrails(landmarks) {
-  const now = performance.now();
-
-  for (const index of LANDMARK_INDEXES) {
-    const lm = landmarks[index];
-    if (!lm || lm.visibility < 0.6) continue;
-
-    const x = (1 - lm.x) * window.innerWidth;
-    const y = lm.y * window.innerHeight;
-    const z = lm.z || 0;
-
-    const prev = previousPoints.get(index);
-    const color = getColorFromVideo(lm.x, lm.y);
-
-    if (prev) {
-      const dx = x - prev.x;
-      const dy = y - prev.y;
-      const speed = Math.hypot(dx, dy);
-
-      if (speed < 4) {
-        previousPoints.set(index, { x, y, z });
-        continue;
-      }
-
-      const last = lastStrokeTime.get(index) || 0;
-      if (now - last < 35) {
-        previousPoints.set(index, { x, y, z });
-        continue;
-      }
-      lastStrokeTime.set(index, now);
-
-      // Più vicino alla camera = linea più spessa
-      const depth = Math.max(0, Math.min(1, 1 - Math.abs(z) * 2));
-
-      const lineWidth = Math.max(1.5, Math.min(22, speed * 0.05 + depth * 8));
-      const alpha = Math.max(0.05, Math.min(0.28, 0.06 + depth * 0.18));
-
-      const cx = (prev.x + x) / 2 + (Math.random() - 0.5) * 4;
-      const cy = (prev.y + y) / 2 + (Math.random() - 0.5) * 4;
-
-      // Alone morbido molto discreto
-      ctx.save();
-      ctx.strokeStyle = color;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.lineWidth = lineWidth * 1.8;
-      ctx.globalAlpha = alpha * 0.12;
-      ctx.filter = 'blur(4px)';
-      ctx.beginPath();
-      ctx.moveTo(prev.x, prev.y);
-      ctx.quadraticCurveTo(cx, cy, x, y);
-      ctx.stroke();
-      ctx.restore();
-
-      // Scia principale
-      ctx.save();
-      ctx.strokeStyle = color;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.lineWidth = lineWidth;
-      ctx.globalAlpha = alpha;
-      ctx.beginPath();
-      ctx.moveTo(prev.x, prev.y);
-      ctx.quadraticCurveTo(cx, cy, x, y);
-      ctx.stroke();
-      ctx.restore();
-
-      // Riflesso interno leggero
-      ctx.save();
-      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.lineWidth = lineWidth * 0.12;
-      ctx.globalAlpha = alpha * 0.25;
-      ctx.beginPath();
-      ctx.moveTo(prev.x, prev.y);
-      ctx.quadraticCurveTo(cx, cy, x, y);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    previousPoints.set(index, { x, y, z });
+/* --- IL PENNELLO ARTISTICO V1.5 --- */
+function drawArtisticStroke(prev, curr, color, speed) {
+  const dx = curr.x - prev.x;
+  const dy = curr.y - prev.y;
+  const angle = Math.atan2(dy, dx);
+  
+  // Numero di setole basato sulla velocità
+  const strands = Math.floor(Math.min(8, 3 + speed * 0.1));
+  const spread = Math.min(20, 5 + speed * 0.2);
+  
+  ctx.save();
+  
+  for (let i = 0; i < strands; i++) {
+    // Offset casuale per simulare le setole di un pennello
+    const offset = (i - strands / 2) * (spread / strands);
+    const ox = Math.sin(angle) * offset;
+    const oy = Math.cos(angle) * offset;
+    
+    const alpha = Math.max(0.1, 0.4 - (i * 0.02));
+    ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`;
+    ctx.lineWidth = Math.max(0.5, speed * 0.02);
+    ctx.lineCap = 'round';
+    
+    ctx.beginPath();
+    ctx.moveTo(prev.x + ox, prev.y + oy);
+    // Un pizzico di curvatura casuale per la fluidità
+    const cx = (prev.x + curr.x) / 2 + (Math.random() - 0.5) * 10;
+    const cy = (prev.y + curr.y) / 2 + (Math.random() - 0.5) * 10;
+    ctx.quadraticCurveTo(cx + ox, cy + oy, curr.x + ox, curr.y + oy);
+    ctx.stroke();
   }
+  
+  // Aggiunta di "schizzi" per movimenti molto veloci
+  if (speed > 40) {
+    ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.3)`;
+    for(let j=0; j<3; j++) {
+      ctx.beginPath();
+      ctx.arc(curr.x + (Math.random()-0.5)*40, curr.y + (Math.random()-0.5)*40, Math.random()*2, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+  
+  ctx.restore();
 }
 
-function render() {
+function detect() {
   if (video.readyState >= 2) {
     sampleCtx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
+    const results = poseLandmarker.detectForVideo(video, performance.now());
+    
+    if (results.landmarks?.length) {
+      const landmarks = results.landmarks[0];
+      LANDMARK_INDEXES.forEach(index => {
+        const lm = landmarks[index];
+        if (!lm || lm.visibility < 0.7) return;
+
+        const x = (1 - lm.x) * window.innerWidth;
+        const y = lm.y * window.innerHeight;
+        const prev = previousPoints.get(index);
+
+        if (prev) {
+          const speed = Math.hypot(x - prev.x, y - prev.y);
+          // 🚨 FILTRO MOVIMENTO: Disegna solo se c'è spostamento reale
+          if (speed > 5) {
+            const color = getColor(lm.x, lm.y);
+            drawArtisticStroke(prev, {x, y}, color, speed);
+          }
+        }
+        previousPoints.set(index, {x, y});
+      });
+    }
   }
-  requestAnimationFrame(render);
+  requestAnimationFrame(detect);
 }
 
-function detectLoop() {
-  const results = poseLandmarker.detectForVideo(video, performance.now());
-
-  if (results.landmarks?.length) {
-    drawTrails(results.landmarks[0]);
-  }
-
-  requestAnimationFrame(detectLoop);
-}
-
-function resetCanvas() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  previousPoints.clear();
-  lastStrokeTime.clear();
-  particles = [];
-
-  // Ripristina lo stato del contesto per evitare che filtri o alpha
-  // residui rendano il canvas apparentemente nero.
-  ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
-  ctx.globalAlpha = 1;
-  ctx.filter = 'none';
-  ctx.globalCompositeOperation = 'source-over';
-}
-
-function saveCanvas() {
-  const exportCanvas = document.createElement('canvas');
-  const exportCtx = exportCanvas.getContext('2d');
-
-  exportCanvas.width = canvas.width;
-  exportCanvas.height = canvas.height;
-
-  exportCtx.fillStyle = '#000';
-  exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-  exportCtx.drawImage(canvas, 0, 0);
-
+document.getElementById('resetBtn').onclick = () => ctx.clearRect(0,0,canvas.width,canvas.height);
+document.getElementById('saveBtn').onclick = () => {
+  const out = document.createElement('canvas');
+  out.width = canvas.width; out.height = canvas.height;
+  const octx = out.getContext('2d');
+  octx.fillStyle = '#000'; octx.fillRect(0,0,out.width,out.height);
+  octx.drawImage(canvas, 0,0);
   const link = document.createElement('a');
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  link.download = `entropia-cinetica-${timestamp}.png`;
-  link.href = exportCanvas.toDataURL('image/png');
-  link.click();
-}
+  link.download = 'entropia-v1-5.png';
+  link.href = out.toDataURL(); link.click();
+};
 
-async function goFullscreen() {
-  if (!document.fullscreenElement) {
-    await document.documentElement.requestFullscreen().catch(() => {});
-  }
-}
-
-document.getElementById('resetBtn').addEventListener('click', resetCanvas);
-document.getElementById('saveBtn').addEventListener('click', saveCanvas);
-document.getElementById('fullscreenBtn').addEventListener('click', goFullscreen);
-
-document.getElementById('startApp').addEventListener('click', async () => {
+document.getElementById('startApp').onclick = async () => {
   document.getElementById('splash').style.display = 'none';
-
-  resetCanvas();
   await setupCamera();
   await setupPose();
-
-  render();
-  detectLoop();
-
-  // Reset automatico ogni 3 minuti
-  setInterval(resetCanvas, 180000);
-});
+  detect();
+  setInterval(() => ctx.clearRect(0,0,canvas.width,canvas.height), 180000);
+};
 </script>
-
 </body>
 </html>
-```
