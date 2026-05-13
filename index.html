@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Entropia Cinetica v1.6.8</title>
+<title>Entropia Cinetica v1.6.8 | Auto-Reset</title>
 
 <style>
 html, body {
@@ -184,7 +184,7 @@ function detect() {
   requestAnimationFrame(detect);
 }
 
-// FUNZIONE EXPORT (Unificata per manuale e automatico)
+// FUNZIONE EXPORT CON RESET AUTOMATICO
 function exportCanvas(isAuto = false) {
   const out = document.createElement('canvas');
   out.width = canvas.width; out.height = canvas.height;
@@ -201,6 +201,10 @@ function exportCanvas(isAuto = false) {
   link.download = isAuto ? `auto_entropia_${timestamp}.png` : `manual_entropia_${timestamp}.png`;
   link.href = out.toDataURL();
   link.click();
+
+  // RESET DELLA TELA E DEI PUNTI DOPO L'ESPORTAZIONE
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  previousPoints.clear();
 }
 
 document.getElementById('fullBtn').onclick = () => {
@@ -226,10 +230,10 @@ document.getElementById('startApp').onclick = async () => {
   await setupPose();
   detect();
   
-  // AVVIO AUTO-EXPORT OGNI ORA
+  // AVVIO AUTO-EXPORT OGNI ORA (Reset incluso)
   setInterval(() => {
     exportCanvas(true);
-  }, 3,6e+6); 
+  }, 3.6e+6); 
 };
 </script>
 </body>
