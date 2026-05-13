@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Entropia Cinetica v1.5.2</title>
+<title>Entropia Cinetica v1.6.0</title>
 
 <style>
 html, body {
@@ -16,14 +16,14 @@ html, body {
   object-fit: cover; transform: scaleX(-1);
 }
 #video { display: none; }
-#videoView { opacity: 0.12; filter: grayscale(1) contrast(1.2); z-index: 1; pointer-events: none; }
+#videoView { opacity: 0.1; filter: grayscale(1) brightness(0.7); z-index: 1; pointer-events: none; }
 
 #canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 2; background: transparent; }
 
 #ui { position: fixed; top: 15px; left: 15px; z-index: 10; display: flex; gap: 10px; }
 button {
   background: rgba(0,0,0,0.7); color: #fff; border: 1px solid rgba(255,255,255,0.2);
-  padding: 10px 15px; border-radius: 4px; cursor: pointer; font-size: 12px; letter-spacing: 1px;
+  padding: 10px 15px; border-radius: 4px; cursor: pointer; font-size: 11px; letter-spacing: 1px;
 }
 button:hover { background: #fff; color: #000; }
 
@@ -34,15 +34,15 @@ button:hover { background: #fff; color: #000; }
 }
 #startApp {
   margin-top: 30px; padding: 12px 24px; border: 1px solid white;
-  background: transparent; color: white; cursor: pointer;
+  background: transparent; color: white; cursor: pointer; border-radius: 4px;
 }
 </style>
 </head>
 <body>
 
 <div id="splash">
-  <h1 style="letter-spacing: 5px;">ENTROPIA CINETICA</h1>
-  <p style="opacity: 0.5;">STUDIO SUL MOVIMENTO V1.5.2</p>
+  <h1 style="letter-spacing: 7px; font-weight: 200;">ENTROPIA CINETICA</h1>
+  <p style="opacity: 0.5;">STUDIO SUL MOVIMENTO V1.6.0</p>
   <button id="startApp">INIZIA SCAN</button>
 </div>
 
@@ -65,6 +65,7 @@ const ctx = canvas.getContext('2d');
 let poseLandmarker;
 let previousPoints = new Map();
 
+// Selezione landmark: naso, spalle, gomiti, polsi, bacino
 const LANDMARK_INDEXES = [0, 11, 12, 13, 14, 15, 16, 23, 24];
 
 function resize() {
@@ -105,54 +106,36 @@ function getColor(x, y) {
   return { r: d[0], g: d[1], b: d[2] };
 }
 
-/* --- IL PENNELLO CALLIGRAFICO V1.5.2 --- */
-function drawSingleCalligraphicStroke(prev, curr, color, speed) {
-  // Spessore massimo basato sulla velocità
-  const maxLineWidth = Math.min(18, 2 + speed * 0.12);
+/* --- IL PENNELLO CONTINUO DINAMICO V1.6.0 --- */
+function drawContinuousLiquidStroke(prev, curr, color, zDepth) {
+  ctx.save();
   
-  // Punto di controllo per la curva di Bézier (morbidezza)
+  // 1. Spessore basato sulla Z (profondità)
+  // MediaPipe Z è solitamente tra -1 (vicino) e 0 (lontano).
+  // Mappiamo lo spessore: vicino = più grosso, lontano = sottilissimo
+  const baseWeight = Math.max(0.5, (zDepth * -15) + 2); 
+  
+  // 2. Disegno della linea continua senza frammentazione
   const midX = (prev.x + curr.x) / 2;
   const midY = (prev.y + curr.y) / 2;
 
-  ctx.save();
-  
-  // Per creare l'effetto "a punta" (tapering), disegniamo la curva 
-  // frammentata in piccoli segmenti con larghezza variabile
-  const steps = 8; 
-  for (let i = 0; i < steps; i++) {
-    const tStart = i / steps;
-    const tEnd = (i + 1) / steps;
-
-    // Funzione sinusoidale per far sì che inizi a 0, cresca al centro e finisca a 0
-    const sizeProgress = Math.sin(tStart * Math.PI); 
-    const currentWidth = maxLineWidth * sizeProgress;
-
-    ctx.beginPath();
-    ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${0.5 * sizeProgress})`;
-    ctx.lineWidth = currentWidth;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    // Calcolo punti sulla curva quadratica
-    const x1 = Math.pow(1 - tStart, 2) * prev.x + 2 * (1 - tStart) * tStart * midX + Math.pow(tStart, 2) * curr.x;
-    const y1 = Math.pow(1 - tStart, 2) * prev.y + 2 * (1 - tStart) * tStart * midY + Math.pow(tStart, 2) * curr.y;
-    
-    const x2 = Math.pow(1 - tEnd, 2) * prev.x + 2 * (1 - tEnd) * tEnd * midX + Math.pow(tEnd, 2) * curr.x;
-    const y2 = Math.pow(1 - tEnd, 2) * prev.y + 2 * (1 - tEnd) * tEnd * midY + Math.pow(tEnd, 2) * curr.y;
-
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-  }
-
-  // Leggero bagliore centrale (core della linea)
   ctx.beginPath();
-  ctx.strokeStyle = `rgba(255, 255, 255, 0.2)`;
-  ctx.lineWidth = maxLineWidth * 0.1;
   ctx.moveTo(prev.x, prev.y);
+  
+  // Usiamo quadraticCurveTo per la massima sinuosità
   ctx.quadraticCurveTo(midX, midY, curr.x, curr.y);
+  
+  // Stile della linea
+  ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.6)`;
+  ctx.lineWidth = baseWeight;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  
+  // Un leggero shadow per ammorbidire ulteriormente i bordi (evita l'aliasing)
+  ctx.shadowBlur = 2;
+  ctx.shadowColor = `rgba(${color.r}, ${color.g}, ${color.b}, 0.3)`;
+  
   ctx.stroke();
-
   ctx.restore();
 }
 
@@ -173,9 +156,10 @@ function detect() {
 
         if (prev) {
           const speed = Math.hypot(x - prev.x, y - prev.y);
-          if (speed > 5) {
+          if (speed > 2) { // Soglia minima per evitare vibrazioni
             const color = getColor(lm.x, lm.y);
-            drawSingleCalligraphicStroke(prev, {x, y}, color, speed);
+            // lm.z indica la profondità
+            drawContinuousLiquidStroke(prev, {x, y}, color, lm.z);
           }
         }
         previousPoints.set(index, {x, y});
@@ -193,7 +177,7 @@ document.getElementById('saveBtn').onclick = () => {
   octx.fillStyle = '#000'; octx.fillRect(0,0,out.width,out.height);
   octx.drawImage(canvas, 0,0);
   const link = document.createElement('a');
-  link.download = 'entropia-calligrafica.png';
+  link.download = 'entropia-v1-6.png';
   link.href = out.toDataURL(); link.click();
 };
 
@@ -202,7 +186,6 @@ document.getElementById('startApp').onclick = async () => {
   await setupCamera();
   await setupPose();
   detect();
-  setInterval(() => ctx.clearRect(0,0,canvas.width,canvas.height), 180000);
 };
 </script>
 </body>
