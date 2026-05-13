@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Entropia Cinetica v1.6.4 | Bristle Evolution</title>
+<title>Entropia Cinetica v1.6.5 | Spatial Painting</title>
 
 <style>
 html, body {
@@ -11,21 +11,24 @@ html, body {
   background: #000; font-family: 'Courier New', Courier, monospace;
 }
 
+/* Ottimizzato per ologrammi: Nero assoluto RGB(0,0,0) */
 #video, #videoView {
   position: fixed; inset: 0; width: 100vw; height: 100vh;
   object-fit: cover; transform: scaleX(-1);
 }
 #video { display: none; }
-#videoView { opacity: 0.08; filter: grayscale(1) contrast(1.5); z-index: 1; pointer-events: none; }
+/* Overlay video quasi invisibile per mantenere il focus sul tratto */
+#videoView { opacity: 0.05; filter: grayscale(1) brightness(0.4); z-index: 1; pointer-events: none; }
 
 #canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 2; background: transparent; }
 
-#ui { position: fixed; top: 15px; left: 15px; z-index: 10; display: flex; gap: 10px; }
+#ui { position: fixed; top: 20px; right: 20px; z-index: 10; display: flex; flex-direction: column; gap: 12px; }
 button {
-  background: rgba(0,0,0,0.8); color: #fff; border: 1px solid rgba(255,255,255,0.1);
-  padding: 10px 15px; border-radius: 4px; cursor: pointer; font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+  background: rgba(15, 15, 15, 0.9); color: #888; border: 1px solid rgba(255,255,255,0.05);
+  padding: 12px 20px; border-radius: 2px; cursor: pointer; font-size: 9px; letter-spacing: 3px; 
+  text-transform: uppercase; transition: all 0.3s ease;
 }
-button:hover { background: #fff; color: #000; }
+button:hover { color: #fff; border-color: #fff; background: #000; }
 
 #splash {
   position: fixed; inset: 0; display: flex; flex-direction: column;
@@ -33,17 +36,18 @@ button:hover { background: #fff; color: #000; }
   background: #000; color: white; text-align: center;
 }
 #startApp {
-  margin-top: 30px; padding: 12px 24px; border: 1px solid white;
-  background: transparent; color: white; cursor: pointer; border-radius: 2px; letter-spacing: 4px;
+  margin-top: 40px; padding: 15px 35px; border: 1px solid #444;
+  background: transparent; color: #fff; cursor: pointer; border-radius: 0; letter-spacing: 5px;
 }
+#startApp:hover { border-color: #fff; letter-spacing: 7px; }
 </style>
 </head>
 <body>
 
 <div id="splash">
-  <h1 style="letter-spacing: 15px; font-weight: 200;">ENTROPIA CINETICA</h1>
-  <p style="opacity: 0.4;">V1.6.4 • BRISTLE REFINEMENT</p>
-  <button id="startApp">START INSTALLATION</button>
+  <h1 style="letter-spacing: 20px; font-weight: 100; margin-bottom: 5px;">ENTROPIA CINETICA</h1>
+  <p style="opacity: 0.3; font-size: 10px; letter-spacing: 2px;">WEB-AR INSTALLATION • V1.6.5</p>
+  <button id="startApp">INITIALIZE</button>
 </div>
 
 <video id="video" autoplay playsinline muted></video>
@@ -52,7 +56,7 @@ button:hover { background: #fff; color: #000; }
 
 <div id="ui">
   <button id="resetBtn">Void</button>
-  <button id="saveBtn">Capture</button>
+  <button id="saveBtn">Export Canvas</button>
 </div>
 
 <script type="module">
@@ -65,6 +69,7 @@ const ctx = canvas.getContext('2d');
 let poseLandmarker;
 let previousPoints = new Map();
 
+// Punti chiave ottimizzati per l'estetica del corpo nello spazio
 const LANDMARK_INDEXES = [0, 11, 12, 13, 14, 15, 16, 23, 24];
 
 function resize() {
@@ -105,35 +110,35 @@ function getColor(x, y) {
   return { r: d[0], g: d[1], b: d[2] };
 }
 
-/* --- IL BRUSH A SETOLE EVOLUTO V1.6.4 --- */
-function drawBristleStroke(prev, curr, color, zDepth, speed) {
+/* --- BRUSH SPATIAL BRISTLE V1.6.5 --- */
+function drawSpatialBristle(prev, curr, color, zDepth, speed) {
   ctx.save();
   
-  // 1. Spessore calibrato (Z) - Ridotto del 70% per finezza massima vicino alla camera
-  const baseWeight = Math.max(0.2, (zDepth * -4.5) + 0.6);
+  // Calcolo spessore con taglio 70% per AR: la linea rimane sottile ed elegante
+  const baseWeight = Math.max(0.15, (zDepth * -4.2) + 0.55);
   
-  // Numero di setole ridotto per pulizia visiva
+  // Numero fisso di 5 setole per un effetto "minimalista/materico"
   const bristleCount = 5; 
-  // L'apertura del ventaglio di setole dipende dallo spessore e dalla velocità
-  const spread = baseWeight * 3;
+  const spread = baseWeight * 2.8;
 
   const midX = (prev.x + curr.x) / 2;
   const midY = (prev.y + curr.y) / 2;
 
   for (let i = 0; i < bristleCount; i++) {
-    // Offset casuale ma coerente per ogni "setola"
-    const offsetX = (Math.random() - 0.5) * spread;
-    const offsetY = (Math.random() - 0.5) * spread;
+    // Offset basato sulla velocità: più corri, più le setole si "sfilacciano"
+    const speedVariation = speed / 50;
+    const offsetX = (Math.random() - 0.5) * (spread + speedVariation);
+    const offsetY = (Math.random() - 0.5) * (spread + speedVariation);
 
     ctx.beginPath();
     ctx.moveTo(prev.x + offsetX, prev.y + offsetY);
     ctx.quadraticCurveTo(midX + offsetX, midY + offsetY, curr.x + offsetX, curr.y + offsetY);
     
-    // Opacità variabile per setole per dare profondità organica
-    const alpha = (0.2 + Math.random() * 0.4) * (speed / 15);
-    ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${Math.min(alpha, 0.7)})`;
-    ctx.lineWidth = baseWeight * (0.3 + Math.random() * 0.7);
-    ctx.lineCap = 'round';
+    // Alpha dinamico: simula la pressione del pennello
+    const alphaBase = Math.min(0.6, speed / 25);
+    ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alphaBase * (0.4 + Math.random() * 0.6)})`;
+    ctx.lineWidth = baseWeight * (0.5 + Math.random() * 0.5);
+    ctx.lineCap = 'butt'; // Taglio netto della setola per un look più "analogico"
     ctx.stroke();
   }
   
@@ -149,7 +154,7 @@ function detect() {
       const landmarks = results.landmarks[0];
       LANDMARK_INDEXES.forEach(index => {
         const lm = landmarks[index];
-        if (!lm || lm.visibility < 0.7) return;
+        if (!lm || lm.visibility < 0.75) return;
 
         const x = (1 - lm.x) * window.innerWidth;
         const y = lm.y * window.innerHeight;
@@ -157,10 +162,10 @@ function detect() {
 
         if (prev) {
           const speed = Math.hypot(x - prev.x, y - prev.y);
-          // Soglia di movimento per evitare il rumore statico
-          if (speed > 3.0) { 
+          // Soglia 3.5: eliminiamo ogni micro-tremolio per un segno puro
+          if (speed > 3.5) { 
             const color = getColor(lm.x, lm.y);
-            drawBristleStroke(prev, {x, y}, color, lm.z, speed);
+            drawSpatialBristle(prev, {x, y}, color, lm.z, speed);
           }
         }
         previousPoints.set(index, {x, y});
@@ -182,7 +187,7 @@ document.getElementById('saveBtn').onclick = () => {
   octx.fillStyle = '#000'; octx.fillRect(0,0,out.width,out.height);
   octx.drawImage(canvas, 0,0);
   const link = document.createElement('a');
-  link.download = 'entropia-bristle-v1-6-4.png';
+  link.download = 'spatial-painting-v1-6-5.png';
   link.href = out.toDataURL(); link.click();
 };
 
