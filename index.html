@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Entropia Cinetica v1.6.4 | Bristle Evolution</title>
+
+<style>
+html, body {
+  margin: 0; padding: 0; overflow: hidden;
+  background: #000; font-family: 'Courier New', Courier, monospace;
+}
+
+#video, #videoView {
+  position: fixed; inset: 0; width: 100vw; height: 100vh;
+  object-fit: cover; transform: scaleX(-1);
+}
+#video { display: none; }
+#videoView { opacity: 0.08; filter: grayscale(1) contrast(1.5); z-index: 1; pointer-events: none; }
+
+#canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 2; background: transparent; }
+
+#ui { position: fixed; top: 15px; left: 15px; z-index: 10; display: flex; gap: 10px; }
+button {
+  background: rgba(0,0,0,0.8); color: #fff; border: 1px solid rgba(255,255,255,0.1);
+  padding: 10px 15px; border-radius: 4px; cursor: pointer; font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+}
+button:hover { background: #fff; color: #000; }
+
+#splash {
+  position: fixed; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; z-index: 9999;
+  background: #000; color: white; text-align: center;
+}
+#startApp {
+  margin-top: 30px; padding: 12px 24px; border: 1px solid white;
+  background: transparent; color: white; cursor: pointer; border-radius: 2px; letter-spacing: 4px;
+}
+</style>
+</head>
+<body>
+
+<div id="splash">
+  <h1 style="letter-spacing: 15px; font-weight: 200;">ENTROPIA CINETICA</h1>
+  <p style="opacity: 0.4;">V1.6.4 • BRISTLE REFINEMENT</p>
+  <button id="startApp">START INSTALLATION</button>
+</div>
+
+<video id="video" autoplay playsinline muted></video>
+<video id="videoView" autoplay playsinline muted></video>
+<canvas id="canvas"></canvas>
+
+<div id="ui">
+  <button id="resetBtn">Void</button>
+  <button id="saveBtn">Capture</button>
+</div>
+
+<script type="module">
+import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let poseLandmarker;
+let previousPoints = new Map();
+
+const LANDMARK_INDEXES = [0, 11, 12, 13, 14, 15, 16, 23, 24];
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = window.innerWidth * dpr;
+  canvas.height = window.innerHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+async function setupCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'user', width: 1280, height: 720 }, audio: false
+  });
+  video.srcObject = stream;
+  document.getElementById('videoView').srcObject = stream;
+  return new Promise(r => video.onloadedmetadata = () => { video.play(); r(); });
+}
+
+async function setupPose() {
+  const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+  poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+    baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task' },
+    runningMode: 'VIDEO', numPoses: 1
+  });
+}
+
+const sampleCanvas = document.createElement('canvas');
+const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+sampleCanvas.width = 160; sampleCanvas.height = 90;
+
+function getColor(x, y) {
+  if (!video.videoWidth) return { r:255, g:255, b:255 };
+  const sx = Math.floor((1 - x) * sampleCanvas.width);
+  const sy = Math.floor(y * sampleCanvas.height);
+  const d = sampleCtx.getImageData(sx, sy, 1, 1).data;
+  return { r: d[0], g: d[1], b: d[2] };
+}
+
+/* --- IL BRUSH A SETOLE EVOLUTO V1.6.4 --- */
+function drawBristleStroke(prev, curr, color, zDepth, speed) {
+  ctx.save();
+  
+  // 1. Spessore calibrato (Z) - Ridotto del 70% per finezza massima vicino alla camera
+  const baseWeight = Math.max(0.2, (zDepth * -4.5) + 0.6);
+  
+  // Numero di setole ridotto per pulizia visiva
+  const bristleCount = 5; 
+  // L'apertura del ventaglio di setole dipende dallo spessore e dalla velocità
+  const spread = baseWeight * 3;
+
+  const midX = (prev.x + curr.x) / 2;
+  const midY = (prev.y + curr.y) / 2;
+
+  for (let i = 0; i < bristleCount; i++) {
+    // Offset casuale ma coerente per ogni "setola"
+    const offsetX = (Math.random() - 0.5) * spread;
+    const offsetY = (Math.random() - 0.5) * spread;
+
+    ctx.beginPath();
+    ctx.moveTo(prev.x + offsetX, prev.y + offsetY);
+    ctx.quadraticCurveTo(midX + offsetX, midY + offsetY, curr.x + offsetX, curr.y + offsetY);
+    
+    // Opacità variabile per setole per dare profondità organica
+    const alpha = (0.2 + Math.random() * 0.4) * (speed / 15);
+    ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${Math.min(alpha, 0.7)})`;
+    ctx.lineWidth = baseWeight * (0.3 + Math.random() * 0.7);
+    ctx.lineCap = 'round';
+    ctx.stroke();
+  }
+  
+  ctx.restore();
+}
+
+function detect() {
+  if (video.readyState >= 2) {
+    sampleCtx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
+    const results = poseLandmarker.detectForVideo(video, performance.now());
+    
+    if (results.landmarks?.length) {
+      const landmarks = results.landmarks[0];
+      LANDMARK_INDEXES.forEach(index => {
+        const lm = landmarks[index];
+        if (!lm || lm.visibility < 0.7) return;
+
+        const x = (1 - lm.x) * window.innerWidth;
+        const y = lm.y * window.innerHeight;
+        const prev = previousPoints.get(index);
+
+        if (prev) {
+          const speed = Math.hypot(x - prev.x, y - prev.y);
+          // Soglia di movimento per evitare il rumore statico
+          if (speed > 3.0) { 
+            const color = getColor(lm.x, lm.y);
+            drawBristleStroke(prev, {x, y}, color, lm.z, speed);
+          }
+        }
+        previousPoints.set(index, {x, y});
+      });
+    }
+  }
+  requestAnimationFrame(detect);
+}
+
+document.getElementById('resetBtn').onclick = () => {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    previousPoints.clear();
+};
+
+document.getElementById('saveBtn').onclick = () => {
+  const out = document.createElement('canvas');
+  out.width = canvas.width; out.height = canvas.height;
+  const octx = out.getContext('2d');
+  octx.fillStyle = '#000'; octx.fillRect(0,0,out.width,out.height);
+  octx.drawImage(canvas, 0,0);
+  const link = document.createElement('a');
+  link.download = 'entropia-bristle-v1-6-4.png';
+  link.href = out.toDataURL(); link.click();
+};
+
+document.getElementById('startApp').onclick = async () => {
+  document.getElementById('splash').style.display = 'none';
+  await setupCamera();
+  await setupPose();
+  detect();
+};
+</script>
+</body>
+</html>
