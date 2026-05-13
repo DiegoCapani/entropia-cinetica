@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Entropia Cinetica v1.5.1</title>
+<title>Entropia Cinetica v1.5.2</title>
 
 <style>
 html, body {
@@ -16,17 +16,16 @@ html, body {
   object-fit: cover; transform: scaleX(-1);
 }
 #video { display: none; }
-#videoView { opacity: 0.14; filter: contrast(1.1) brightness(0.8); z-index: 1; pointer-events: none; }
+#videoView { opacity: 0.12; filter: grayscale(1) contrast(1.2); z-index: 1; pointer-events: none; }
 
 #canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 2; background: transparent; }
 
 #ui { position: fixed; top: 15px; left: 15px; z-index: 10; display: flex; gap: 10px; }
 button {
-  background: rgba(0,0,0,0.8); color: #fff; border: 1px solid rgba(255,255,255,0.2);
-  padding: 10px 18px; border-radius: 30px; cursor: pointer; font-size: 11px; letter-spacing: 1.5px;
-  transition: all 0.3s;
+  background: rgba(0,0,0,0.7); color: #fff; border: 1px solid rgba(255,255,255,0.2);
+  padding: 10px 15px; border-radius: 4px; cursor: pointer; font-size: 12px; letter-spacing: 1px;
 }
-button:hover { background: #fff; color: #000; border-color: #fff; }
+button:hover { background: #fff; color: #000; }
 
 #splash {
   position: fixed; inset: 0; display: flex; flex-direction: column;
@@ -34,17 +33,17 @@ button:hover { background: #fff; color: #000; border-color: #fff; }
   background: #000; color: white; text-align: center;
 }
 #startApp {
-  margin-top: 30px; padding: 12px 30px; border: 1px solid white;
-  background: transparent; color: white; cursor: pointer; border-radius: 50px;
+  margin-top: 30px; padding: 12px 24px; border: 1px solid white;
+  background: transparent; color: white; cursor: pointer;
 }
 </style>
 </head>
 <body>
 
 <div id="splash">
-  <h1 style="letter-spacing: 8px; font-weight: 300;">ENTROPIA CINETICA</h1>
-  <p style="opacity: 0.4;">V1.5.1 • LIQUID TRACE</p>
-  <button id="startApp">ATTIVA CAMERA</button>
+  <h1 style="letter-spacing: 5px;">ENTROPIA CINETICA</h1>
+  <p style="opacity: 0.5;">STUDIO SUL MOVIMENTO V1.5.2</p>
+  <button id="startApp">INIZIA SCAN</button>
 </div>
 
 <video id="video" autoplay playsinline muted></video>
@@ -52,7 +51,7 @@ button:hover { background: #fff; color: #000; border-color: #fff; }
 <canvas id="canvas"></canvas>
 
 <div id="ui">
-  <button id="resetBtn">RESET TELA</button>
+  <button id="resetBtn">RESET</button>
   <button id="saveBtn">EXPORT PNG</button>
 </div>
 
@@ -65,9 +64,7 @@ const ctx = canvas.getContext('2d');
 
 let poseLandmarker;
 let previousPoints = new Map();
-let lastStrokeTime = new Map();
 
-// Punti focali per un'estetica pulita: testa, mani, gomiti, spalle
 const LANDMARK_INDEXES = [0, 11, 12, 13, 14, 15, 16, 23, 24];
 
 function resize() {
@@ -108,34 +105,52 @@ function getColor(x, y) {
   return { r: d[0], g: d[1], b: d[2] };
 }
 
-/* --- BRUSH LIQUIDO V1.5.1 --- */
-function drawSinuousStroke(prev, curr, color, speed) {
-  ctx.save();
+/* --- IL PENNELLO CALLIGRAFICO V1.5.2 --- */
+function drawSingleCalligraphicStroke(prev, curr, color, speed) {
+  // Spessore massimo basato sulla velocità
+  const maxLineWidth = Math.min(18, 2 + speed * 0.12);
   
-  // Lo spessore è inversamente proporzionale alla velocità per un effetto "piuma"
-  // Più veloce = più sottile e sinuoso
-  const weight = Math.max(1, Math.min(12, 20 / (speed * 0.1 + 1) + 2));
-  const alpha = Math.max(0.1, Math.min(0.6, 0.8 / (speed * 0.05 + 1)));
-
-  ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`;
-  ctx.lineWidth = weight;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  // Punto di controllo per la curva dolce (punto medio con offset armonico)
+  // Punto di controllo per la curva di Bézier (morbidezza)
   const midX = (prev.x + curr.x) / 2;
   const midY = (prev.y + curr.y) / 2;
 
-  ctx.beginPath();
-  ctx.moveTo(prev.x, prev.y);
-  // La curva quadratica crea la morbidezza che hai chiesto
-  ctx.quadraticCurveTo(midX, midY, curr.x, curr.y);
-  ctx.stroke();
+  ctx.save();
+  
+  // Per creare l'effetto "a punta" (tapering), disegniamo la curva 
+  // frammentata in piccoli segmenti con larghezza variabile
+  const steps = 8; 
+  for (let i = 0; i < steps; i++) {
+    const tStart = i / steps;
+    const tEnd = (i + 1) / steps;
 
-  // Opzionale: un leggero bagliore per dare profondità alla linea calligrafica
-  ctx.globalAlpha = alpha * 0.3;
-  ctx.lineWidth = weight * 2.5;
-  ctx.filter = 'blur(4px)';
+    // Funzione sinusoidale per far sì che inizi a 0, cresca al centro e finisca a 0
+    const sizeProgress = Math.sin(tStart * Math.PI); 
+    const currentWidth = maxLineWidth * sizeProgress;
+
+    ctx.beginPath();
+    ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${0.5 * sizeProgress})`;
+    ctx.lineWidth = currentWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Calcolo punti sulla curva quadratica
+    const x1 = Math.pow(1 - tStart, 2) * prev.x + 2 * (1 - tStart) * tStart * midX + Math.pow(tStart, 2) * curr.x;
+    const y1 = Math.pow(1 - tStart, 2) * prev.y + 2 * (1 - tStart) * tStart * midY + Math.pow(tStart, 2) * curr.y;
+    
+    const x2 = Math.pow(1 - tEnd, 2) * prev.x + 2 * (1 - tEnd) * tEnd * midX + Math.pow(tEnd, 2) * curr.x;
+    const y2 = Math.pow(1 - tEnd, 2) * prev.y + 2 * (1 - tEnd) * tEnd * midY + Math.pow(tEnd, 2) * curr.y;
+
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+
+  // Leggero bagliore centrale (core della linea)
+  ctx.beginPath();
+  ctx.strokeStyle = `rgba(255, 255, 255, 0.2)`;
+  ctx.lineWidth = maxLineWidth * 0.1;
+  ctx.moveTo(prev.x, prev.y);
+  ctx.quadraticCurveTo(midX, midY, curr.x, curr.y);
   ctx.stroke();
 
   ctx.restore();
@@ -150,7 +165,7 @@ function detect() {
       const landmarks = results.landmarks[0];
       LANDMARK_INDEXES.forEach(index => {
         const lm = landmarks[index];
-        if (!lm || lm.visibility < 0.75) return;
+        if (!lm || lm.visibility < 0.7) return;
 
         const x = (1 - lm.x) * window.innerWidth;
         const y = lm.y * window.innerHeight;
@@ -158,10 +173,9 @@ function detect() {
 
         if (prev) {
           const speed = Math.hypot(x - prev.x, y - prev.y);
-          // Soglia di movimento per evitare tremolii
-          if (speed > 3) {
+          if (speed > 5) {
             const color = getColor(lm.x, lm.y);
-            drawSinuousStroke(prev, {x, y}, color, speed);
+            drawSingleCalligraphicStroke(prev, {x, y}, color, speed);
           }
         }
         previousPoints.set(index, {x, y});
@@ -179,7 +193,7 @@ document.getElementById('saveBtn').onclick = () => {
   octx.fillStyle = '#000'; octx.fillRect(0,0,out.width,out.height);
   octx.drawImage(canvas, 0,0);
   const link = document.createElement('a');
-  link.download = 'entropia-liquid-v1-5-1.png';
+  link.download = 'entropia-calligrafica.png';
   link.href = out.toDataURL(); link.click();
 };
 
@@ -188,8 +202,7 @@ document.getElementById('startApp').onclick = async () => {
   await setupCamera();
   await setupPose();
   detect();
-  // Memoria collettiva: reset ogni 5 minuti per permettere più stratificazione
-  setInterval(() => ctx.clearRect(0,0,canvas.width,canvas.height), 300000);
+  setInterval(() => ctx.clearRect(0,0,canvas.width,canvas.height), 180000);
 };
 </script>
 </body>
