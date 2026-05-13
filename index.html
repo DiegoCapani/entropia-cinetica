@@ -209,41 +209,49 @@ function clamp(v) {
 
 function getColorFromVideo(x, y) {
   if (!video.videoWidth || !video.videoHeight) {
-    return 'rgba(255,255,255,0.22)';
+    return 'rgba(255,255,255,0.35)';
   }
 
   const sx = Math.floor((1 - x) * sampleCanvas.width);
   const sy = Math.floor(y * sampleCanvas.height);
+  const radius = 4;
 
-  const radius = 2;
-  const startX = Math.max(0, sx - radius);
-  const startY = Math.max(0, sy - radius);
-  const width = Math.min(sampleCanvas.width - startX, radius * 2 + 1);
-  const height = Math.min(sampleCanvas.height - startY, radius * 2 + 1);
+  let totalR = 0, totalG = 0, totalB = 0, count = 0;
 
-  const data = sampleCtx.getImageData(startX, startY, width, height).data;
-
-  let r = 0, g = 0, b = 0;
-  const count = data.length / 4;
-
-  for (let i = 0; i < data.length; i += 4) {
-    r += data[i];
-    g += data[i + 1];
-    b += data[i + 2];
+  for (let yy = -radius; yy <= radius; yy++) {
+    for (let xx = -radius; xx <= radius; xx++) {
+      const px = Math.max(0, Math.min(sampleCanvas.width - 1, sx + xx));
+      const py = Math.max(0, Math.min(sampleCanvas.height - 1, sy + yy));
+      const data = sampleCtx.getImageData(px, py, 1, 1).data;
+      totalR += data[0];
+      totalG += data[1];
+      totalB += data[2];
+      count++;
+    }
   }
 
-  r /= count;
-  g /= count;
-  b /= count;
+  let r = totalR / count;
+  let g = totalG / count;
+  let b = totalB / count;
 
   const avg = (r + g + b) / 3;
+  r = avg + (r - avg) * 1.8;
+  g = avg + (g - avg) * 1.8;
+  b = avg + (b - avg) * 1.8;
 
-  // Saturazione e luminosità più vive
-  r = clamp((r + (r - avg) * 0.9) * 1.25);
-  g = clamp((g + (g - avg) * 0.9) * 1.25);
-  b = clamp((b + (b - avg) * 0.9) * 1.25);
+  r *= 1.35;
+  g *= 1.35;
+  b *= 1.35;
 
-  return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, 0.24)`;
+  r = (r - 128) * 1.15 + 128;
+  g = (g - 128) * 1.15 + 128;
+  b = (b - 128) * 1.15 + 128;
+
+  r = Math.max(0, Math.min(255, Math.round(r)));
+  g = Math.max(0, Math.min(255, Math.round(g)));
+  b = Math.max(0, Math.min(255, Math.round(b)));
+
+  return `rgba(${r}, ${g}, ${b}, 0.42)`;
 }
 
 function drawTrails(landmarks) {
@@ -351,6 +359,8 @@ function detectLoop() {
 function resetCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   previousPoints.clear();
+  lastStrokeTime.clear();
+  particles = [];
 }
 
 function saveCanvas() {
