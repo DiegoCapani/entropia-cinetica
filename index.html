@@ -1,4 +1,4 @@
-# Entropia Cinetica v1.4.1
+# Entropia Cinetica v1.4.2
 
 Versione aggiornata basata sulla tua v1.3.
 
@@ -18,7 +18,7 @@ Versione aggiornata basata sulla tua v1.3.
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Entropia Cinetica v1.4.1</title>
+<title>Entropia Cinetica v1.4.2</title>
 
 <style>
 html, body {
@@ -51,6 +51,7 @@ html, body {
   inset: 0;
   width: 100vw;
   height: 100vh;
+  background: transparent;
   z-index: 2;
 }
 
@@ -114,7 +115,7 @@ button:hover {
 
 <div id="splash">
   <h1>ENTROPIA CINETICA</h1>
-  <p>web app v1.4.1</p>
+  <p>web app v1.4.2</p>
   <button id="startApp">Avvia web app</button>
 </div>
 
@@ -139,6 +140,7 @@ const ctx = canvas.getContext('2d');
 let poseLandmarker;
 let previousPoints = new Map();
 let lastStrokeTime = new Map();
+let particles = []; // mantenuto per compatibilità con resetCanvas
 
 const LANDMARK_INDEXES = [
   0,
@@ -361,6 +363,13 @@ function resetCanvas() {
   previousPoints.clear();
   lastStrokeTime.clear();
   particles = [];
+
+  // Ripristina lo stato del contesto per evitare che filtri o alpha
+  // residui rendano il canvas apparentemente nero.
+  ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.filter = 'none';
+  ctx.globalCompositeOperation = 'source-over';
 }
 
 function saveCanvas() {
