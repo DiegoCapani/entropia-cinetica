@@ -226,7 +226,7 @@ document.getElementById('startApp').onclick = async () => {
   await setupPose();
   detect();
   
-  // AVVIO AUTO-EXPORT OGNI 20 SECONDI
+  // AVVIO AUTO-EXPORT OGNI ORA
   setInterval(() => {
     exportCanvas(true);
   }, 3,6e+6); 
